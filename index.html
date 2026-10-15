@@ -30,9 +30,15 @@
     <div id="view-home" style="display: none;">
       <div class="home-layout-vertical">
         <div class="home-calendar-section">
-          <!-- ★カレンダー本体に左右スワイプを追加 -->
           <div class="calendar-wrapper" id="home-calendar-swipe-area">
-            <div class="cal-header-row"><h1 class="cal-title" id="home-cal-title"></h1></div>
+            <!-- ★修正：カレンダーのタイトル横に ＜ ＞ ボタンを追加 -->
+            <div class="cal-header-row">
+              <h1 class="cal-title" id="home-cal-title"></h1>
+              <div class="detail-day-step-btns">
+                <button type="button" onclick="changeHomeMonth(-1)"></button>
+                <button type="button" onclick="changeHomeMonth(1)"></button>
+              </div>
+            </div>
             <div class="cal-weekdays"><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div><div>SUN</div></div>
             <div class="cal-grid" id="home-cal-grid"></div>
           </div>
@@ -59,9 +65,7 @@
       <button class="btn-primary" onclick="openDashboardForDate(null)" style="margin-top: 8px;">ワークアウトを記録</button>
     </div>
 
-    <!-- 2. カレンダー詳細＆部位フィルター画面 (削除) ※ホームと機能統合のため今回は非表示に -->
-
-    <!-- 3. 日別詳細画面 -->
+    <!-- 2. 日別詳細画面 -->
     <div id="view-day-detail" style="display: none;">
       <div class="top-nav"><button class="nav-back" onclick="navigateBack()"> ホーム</button></div>
       <div class="detail-date-bar">
@@ -84,21 +88,20 @@
       <div id="day-summary-container" style="display: none;"></div>
       <div id="day-detail-content"></div>
       <button class="btn-primary" id="day-detail-edit-btn" style="margin-top: 20px;">この日の記録を編集</button>
-      <!-- ★追加：削除ボタン -->
+      <!-- 削除ボタン -->
       <button class="btn-danger-outline" id="day-detail-delete-btn" style="display: none;">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
         この日の記録を削除
       </button>
     </div>
 
-    <!-- 4. ワークアウト記録画面 -->
+    <!-- 3. ワークアウト記録画面 -->
     <div id="view-dashboard" style="display: none;" x-data="workoutForm" x-cloak>
       <div class="top-nav">
         <button class="nav-back" onclick="navigateBack()"> 戻る</button>
         <div class="nav-context-wrap"><span class="draft-badge" x-show="hasDraft" style="display: inline-block;">下書き保存済</span></div>
       </div>
       
-      <!-- ★追加：LOG画面上部にも前日/翌日ボタンを配置 -->
       <div class="detail-date-bar">
         <div class="detail-date-heading" id="recording-target-label"></div>
         <div class="detail-day-step-btns"><button type="button" onclick="shiftLogDay(-1)"></button><button type="button" onclick="shiftLogDay(1)"></button></div>
@@ -153,7 +156,7 @@
       </div>
     </div>
 
-    <!-- 5. グラフ画面 -->
+    <!-- 4. グラフ画面 -->
     <div id="view-graph" style="display: none;">
       <div class="top-nav"><span class="nav-context-date">TRAINING DATA</span></div>
       <div class="form-card" style="padding: 14px 18px; margin: 10px 16px 20px;">
@@ -175,7 +178,7 @@
       <div id="chart-volume-container" style="padding: 16px; position: relative; height: 250px;"><canvas id="volumeChart"></canvas></div>
     </div>
 
-    <!-- 6. 設定画面 -->
+    <!-- 5. 設定画面 -->
     <div id="view-settings" style="display: none;" x-data="settingsForm" x-cloak>
       <div class="top-nav"><span class="nav-context-date">SETTINGS</span></div>
       
