@@ -14,12 +14,13 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 button, select, input, textarea, .clickable, .list-row, .pill-btn, .suggest-item { touch-action: manipulation; }
 
+/* ★変更：カプセル型メニューやタイマーを避けるため、下部に180pxの巨大な余白を強制 */
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Hiragino Sans", "YuGothic", sans-serif;
   background-color: var(--bg-base);
   color: var(--text-primary);
   margin: 0;
-  padding: 16px 16px 48px 16px;
+  padding: 16px 16px 180px 16px; 
   user-select: none;
   -webkit-font-smoothing: antialiased;
   font-variant-numeric: tabular-nums;
@@ -226,13 +227,11 @@ input[type="number"], input[type="text"] { width: 100%; height: 100%; box-sizing
 .nav-icon { margin-bottom: 2px; }
 .nav-text { font-size: 0.65rem; font-weight: bold; letter-spacing: 0.05em; }
 
-/* 余白調整 */
-#dashboard-content { padding-bottom: 140px; }
-button[onclick="openDashboardForDate(null)"] { margin-bottom: 120px; }
-#view-graph { padding-bottom: 120px; }
 .slide-anim-from-right { animation: slideInRight 0.25s cubic-bezier(0.25, 0.8, 0.25, 1) forwards; }
 .slide-anim-from-left { animation: slideInLeft 0.25s cubic-bezier(0.25, 0.8, 0.25, 1) forwards; }
 @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 @keyframes slideInLeft { from { transform: translateX(-100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
+
+/* ★変更：不要になった個別余白調整を削除 */
