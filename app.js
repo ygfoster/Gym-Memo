@@ -25,13 +25,12 @@ let partColors = JSON.parse(localStorage.getItem('workout_app_colors_v1')) || DE
 document.addEventListener("DOMContentLoaded", function() {
   initBrowserHistoryGuard(); 
   initDetailSwipe(); 
-  initLogSwipe(); // ★LOG画面のスワイプ追加
-  initCalendarSwipe(); // ★カレンダーのスワイプ追加
+  initLogSwipe(); 
+  initCalendarSwipe(); 
   initTimerSheetSwipe();
   makeDraggable(document.getElementById('floating-total')); makeDraggable(document.getElementById('floating-rest'));
   updateTimerDisplays();
 
-  // ★完全リセット対応：起動時は常にHOME（キャッシュクリア）
   localStorage.removeItem(STORAGE_VIEW_KEY);
   
   const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
@@ -78,7 +77,6 @@ async function syncOfflineQueue() {
 
 document.addEventListener("visibilitychange", function() {
   if (document.visibilityState === 'visible') {
-    // ★完全リセット対応：1時間経過チェックはせず、常にHOMEへ行く
     try { const raw = localStorage.getItem(STORAGE_VIEW_KEY); if (raw) { const s = JSON.parse(raw); if (s.timestamp && (Date.now() - s.timestamp > 3600000)) openHomeView(); } } catch(e){}
     syncOfflineQueue();
   } else {
@@ -124,7 +122,7 @@ async function startRestTimer() {
 function openTimerSheet() { document.getElementById('timer-bottom-sheet').classList.add('open'); document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active')); document.getElementById('nav-timer').classList.add('active'); }
 function closeTimerSheet() {
   document.getElementById('timer-bottom-sheet').classList.remove('open'); const cV = getCurrentVisibleView(); document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
-  if (cV === 'home' || cV === 'calendar') document.getElementById('nav-home').classList.add('active'); if (cV === 'dashboard' || cV === 'detail') document.getElementById('nav-log').classList.add('active'); if (cV === 'graph') document.getElementById('nav-graph').classList.add('active'); if (cV === 'settings') document.getElementById('nav-settings').classList.add('active');
+  if (cV === 'home') document.getElementById('nav-home').classList.add('active'); if (cV === 'dashboard' || cV === 'detail') document.getElementById('nav-log').classList.add('active'); if (cV === 'graph') document.getElementById('nav-graph').classList.add('active'); if (cV === 'settings') document.getElementById('nav-settings').classList.add('active');
 }
 function initTimerSheetSwipe() {
   const sh = document.getElementById('timer-bottom-sheet'); if (!sh) return; let sY = 0;
@@ -143,7 +141,7 @@ function makeDraggable(el) {
 }
 
 /* ======================================================================
-   Alpine.js (フォーム ＆ 新設設定画面)
+   Alpine.js
 ====================================================================== */
 document.addEventListener('alpine:init', () => {
   Alpine.data('workoutForm', () => ({
@@ -185,8 +183,7 @@ document.addEventListener('alpine:init', () => {
       this.formExercises.forEach(ex => {
         const n = ex.name.trim(); const m = ex.memo.trim(); let sT = ""; let hS = false;
         ex.sets.forEach((s, i) => { const w = String(s.w).trim(); const r = String(s.r).trim(); if (w || r) { sT += `${i+1}セット目: ${w ? w+'kg' : '-'} × ${r ? r+'回' : '-'}\n`; hS = true; } });
-        setsText = sT.trim();
-        if (n || hS || m) { tData.push({ date: tD, part: gP, exercise: n || "種目不明", details: setsText, memo: m }); }
+        if (n || hS || m) { tData.push({ date: tD, part: gP, exercise: n || "種目不明", details: sT.trim(), memo: m }); }
       });
       if (tData.length === 0) { this.saveMsg = "内容を入力してください"; this.saveMsgColor = "#FF453A"; return; }
       this.isSaving = true; this.saveMsg = ""; showSavingOverlay();
@@ -220,30 +217,50 @@ document.addEventListener('alpine:init', () => {
 });
 
 /* ======================================================================
-   既存のデータ取得・UI管理用ロジック
+   UI ＆ データ管理
 ====================================================================== */
 function initApp(data) {
-  document.getElementById("loading").style.display = "none";
+  const loading = document.getElementById("loading");
+  if(loading) loading.style.display = "none";
   if (data) {
     globalTrainingHistory = data.trainingHistory || []; globalHealthMap = {};
     if (data.healthHistory && data.healthHistory.length > 0) { data.healthHistory.forEach(item => { if (item && item.date) globalHealthMap[normalizeDateStr(item.date)] = item; }); } else if (data.currentData && data.currentData.date) { globalHealthMap[normalizeDateStr(data.currentData.date)] = data.currentData; }
   }
-  if (!window.isAppInitialized) { window.isAppInitialized = true; openHomeView(); } else { // ★常にホームを開く
+  if (!window.isAppInitialized) { window.isAppInitialized = true; openHomeView(); } else {
     const cV = getCurrentVisibleView();
-    if (cV === 'home') { renderHomeCalendar(); renderWeeklySummary(); } else if (cV === 'calendar') { renderDetailCalendar(); } else if (cV === 'dashboard') { if (window.alpineWorkoutForm) window.alpineWorkoutForm.loadDraftAndRecords(currentRecordingDateStr); } else if (cV === 'detail') { openDayDetailView(currentDetailDateKey, document.getElementById("day-detail-title").innerText, null, null, true); } else if (cV === 'graph') { initGraphView(); }
+    if (cV === 'home') { renderHomeCalendar(); renderWeeklySummary(); } else if (cV === 'dashboard') { if (window.alpineWorkoutForm) window.alpineWorkoutForm.loadDraftAndRecords(currentRecordingDateStr); } else if (cV === 'detail') { openDayDetailView(currentDetailDateKey, document.getElementById("day-detail-title").innerText, null, null, true); } else if (cV === 'graph') { initGraphView(); }
   }
 }
+
 function initBrowserHistoryGuard() { try { window.history.replaceState({ view: 'root_guard' }, ''); window.history.pushState({ view: 'home' }, ''); window.addEventListener('popstate', function(e) { const state = e.state; if (!state || state.view === 'root_guard') { window.history.pushState({ view: 'home' }, ''); openHomeView(true); return; } applyStateFromHistory(state); }); } catch (err) {} }
 function pushAppHistory(s) { try { s.timestamp = Date.now(); localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(s)); window.history.pushState(s, ''); } catch (e) {} }
-function navigateBack() { const cV = getCurrentVisibleView(); if (cV === 'detail') { if (previousViewBeforeDetail === 'calendar') openCalendarDetailView(); else openHomeView(); } else openHomeView(); }
-function getCurrentVisibleView() { if (document.getElementById("view-dashboard").style.display === "block") return 'dashboard'; if (document.getElementById("view-day-detail").style.display === "block") return 'detail'; if (document.getElementById("view-calendar").style.display === "block") return 'calendar'; if (document.getElementById("view-graph").style.display === "block") return 'graph'; if (document.getElementById("view-settings").style.display === "block") return 'settings'; return 'home'; }
-function applyStateFromHistory(s) { if (!s || s.view === 'home') openHomeView(true); else if (s.view === 'calendar') { currentCalYear = s.year; currentCalMonth = s.month; openCalendarDetailView(true); } else if (s.view === 'detail') openDayDetailView(s.dateKey, s.label, s.fromView || 'home', null, true); else if (s.view === 'dashboard') openDashboardForDate(s.dateKey || null, true); else if (s.view === 'graph') switchTab('graph'); else if (s.view === 'settings') switchTab('settings'); else openHomeView(true); }
+function navigateBack() { const cV = getCurrentVisibleView(); if (cV === 'detail') { openHomeView(); } else openHomeView(); }
 
-function hideAllViews() { document.getElementById("loading").style.display = "none"; ['view-home','view-calendar','view-day-detail','view-dashboard','view-graph','view-settings'].forEach(id => document.getElementById(id).style.display = "none"); ['nav-home','nav-log','nav-graph','nav-timer','nav-settings'].forEach(id => document.getElementById(id).classList.remove("active")); }
+function getCurrentVisibleView() { 
+  if (document.getElementById("view-dashboard")?.style.display === "block") return 'dashboard'; 
+  if (document.getElementById("view-day-detail")?.style.display === "block") return 'detail'; 
+  if (document.getElementById("view-graph")?.style.display === "block") return 'graph'; 
+  if (document.getElementById("view-settings")?.style.display === "block") return 'settings'; 
+  return 'home'; 
+}
+
+function applyStateFromHistory(s) { if (!s || s.view === 'home') openHomeView(true); else if (s.view === 'detail') openDayDetailView(s.dateKey, s.label, s.fromView || 'home', null, true); else if (s.view === 'dashboard') openDashboardForDate(s.dateKey || null, true); else if (s.view === 'graph') switchTab('graph'); else if (s.view === 'settings') switchTab('settings'); else openHomeView(true); }
+
+function hideAllViews() { 
+  const loading = document.getElementById("loading");
+  if(loading) loading.style.display = "none"; 
+  ['view-home','view-day-detail','view-dashboard','view-graph','view-settings'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = "none";
+  }); 
+  ['nav-home','nav-log','nav-graph','nav-timer','nav-settings'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.classList.remove("active");
+  }); 
+}
+
 function openHomeView(sH) { hideAllViews(); document.getElementById("view-home").style.display = "block"; document.getElementById("nav-home").classList.add("active"); const now = new Date(); currentCalYear = now.getFullYear(); currentCalMonth = now.getMonth(); renderHomeCalendar(); renderWeeklySummary(); if (!sH) pushAppHistory({ view: 'home' }); window.scrollTo(0, 0); }
-function openCalendarDetailView(sH) { hideAllViews(); document.getElementById("view-calendar").style.display = "block"; renderDetailCalendar(); if (!sH) pushAppHistory({ view: 'calendar', year: currentCalYear, month: currentCalMonth }); window.scrollTo(0, 0); }
 
-// ★追加：LOG画面での前日/翌日切り替え関数
 window.shiftLogDay = function(offset) {
   if (!currentRecordingDateStr) return;
   const d = parseDateKeyToObj(currentRecordingDateStr);
@@ -265,13 +282,10 @@ function openDashboardForDate(tK, sH) {
 function loadHealthDataIntoPrefix(dK, p) { const n = normalizeDateStr(dK); if (globalHealthMap[n]) { renderVitalsToDOM(globalHealthMap[n], p); } else { renderVitalsToDOM(null, p); fetch(GAS_URL + '?action=getDataForDate&date=' + formatWithZeroPad(n) + '&token=' + API_TOKEN).then(res => res.json()).then(data => { if (data && !data.error) { globalHealthMap[n] = data; renderVitalsToDOM(data, p); } }).catch(()=>{}); } }
 function renderVitalsToDOM(data, p) { document.getElementById(p+"sleep-time").innerText = cleanMetric(data?.sleep, ""); document.getElementById(p+"cal-intake").innerText = cleanMetric(data?.intake, ""); document.getElementById(p+"cal-burned").innerText = cleanMetric(data?.burned, ""); document.getElementById(p+"p-val").innerText = cleanMetric(data?.protein, ""); document.getElementById(p+"f-val").innerText = cleanMetric(data?.fat, ""); document.getElementById(p+"c-val").innerText = cleanMetric(data?.carb, ""); const d = data ? parseInt(String(data.balance).replace(/[^-0-9]/g, ""), 10) : NaN; document.getElementById(p+"cal-balance").innerText = isNaN(d) ? "" : (d > 0 ? "+" : "") + d.toLocaleString() + " kcal"; }
 
-// ★追加：削除ボタンの処理
 document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("day-detail-delete-btn").addEventListener("click", () => {
+  document.getElementById("day-detail-delete-btn")?.addEventListener("click", () => {
     if(!confirm(`${document.getElementById("day-detail-title").innerText} の記録をすべて削除しますか？`)) return;
     showSavingOverlay();
-    
-    // GASへ空配列を送信して削除
     const payload = { action: 'saveTrainingLog', targetDate: currentDetailDateKey, trainingData: [], token: API_TOKEN };
     fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) })
       .then(r => r.json()).then(result => {
@@ -291,12 +305,11 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
 
   const rs = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === currentDetailDateKey);
   if (rs.length === 0) {
-    s.style.display = "none"; c.innerHTML = `<div class="empty-state"><div class="empty-state-title">トレーニング記録がありません</div></div>`; b.innerText = "この日のワークアウトを記録"; del.style.display = "none";
+    s.style.display = "none"; c.innerHTML = `<div class="empty-state"><div class="empty-state-title">トレーニング記録がありません</div></div>`; b.innerText = "この日のワークアウトを記録"; if(del) del.style.display = "none";
   } else {
-    b.innerText = "この日の記録を編集・追加"; del.style.display = "flex"; // ★削除ボタン表示
+    b.innerText = "この日の記録を編集・追加"; if(del) del.style.display = "flex";
     const parts = [...new Set(rs.map(r => r.part || "未指定"))].join("・") + "の日"; let vol = 0, sets = 0;
     rs.forEach(r => { const ps = parseDetailsToSets(r.details); sets += ps.length; ps.forEach(s => { vol += (parseFloat(s.w)||0) * (parseFloat(s.r)||0); }); });
-    
     s.style.display = "block"; s.innerHTML = `<div class="detail-hero"><div><div class="detail-part-Main">${parts}</div><div class="detail-sub-counts">${rs.length}種目 ・ 合計 ${sets}セット</div></div><div class="detail-volume-block"><div class="detail-volume-num">${Number.isInteger(vol) ? vol.toLocaleString() : vol.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<span class="detail-volume-kg">kg</span></div><div class="detail-volume-unit">TOTAL VOLUME</div></div></div>`;
     rs.forEach(r => {
       const dc = document.createElement("div"); dc.className = "exercise-detail-card"; dc.innerHTML = `<div class="exercise-detail-name">${r.exercise || "種目未入力"}</div>`; const ps = parseDetailsToSets(r.details);
@@ -314,12 +327,10 @@ function initDetailSwipe() {
   let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-day-detail"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftDetailDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }});
 }
 
-// ★追加：LOG画面でのスワイプ機能
 function initLogSwipe() {
   let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-dashboard"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftLogDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }});
 }
 
-// ★追加：ホーム画面カレンダーのスワイプ機能
 function initCalendarSwipe() {
   let sX = 0, sY = 0; const v = document.getElementById("home-calendar-swipe-area"); if (!v) return;
   const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) { changeHomeMonth(dx > 0 ? -1 : 1); } };
@@ -327,11 +338,7 @@ function initCalendarSwipe() {
   v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true });
 }
 
-function changeHomeMonth(offset) {
-  currentCalMonth += offset;
-  if (currentCalMonth < 0) { currentCalMonth = 11; currentCalYear--; } else if (currentCalMonth > 11) { currentCalMonth = 0; currentCalYear++; }
-  renderHomeCalendar();
-}
+function changeHomeMonth(offset) { currentCalMonth += offset; if (currentCalMonth < 0) { currentCalMonth = 11; currentCalYear--; } else if (currentCalMonth > 11) { currentCalMonth = 0; currentCalYear++; } renderHomeCalendar(); }
 
 function showSavingOverlay() { const o = document.getElementById("saving-overlay"); document.getElementById("saving-spinner").style.display="block"; document.getElementById("saving-check").style.display="none"; document.getElementById("saving-text").innerText="記録を処理中..."; o.classList.add("active"); }
 function finishSavingOverlay(cb) { document.getElementById("saving-spinner").style.display="none"; document.getElementById("saving-check").style.display="flex"; document.getElementById("saving-text").innerText="完了しました"; setTimeout(()=>{ document.getElementById("saving-overlay").classList.remove("active"); if (cb) cb(); }, 450); }
@@ -363,8 +370,6 @@ function getDateTrainedParts(dateKey, useFilter) {
 }
 
 function renderHomeCalendar() { buildCalendarGrid(currentCalYear, currentCalMonth, "home-cal-title", "home-cal-grid", false); updateHomeStats(); }
-function renderDetailCalendar() { buildCalendarGrid(currentCalYear, currentCalMonth, "detail-cal-title", "detail-cal-grid", true); }
-function changeMonth(o) { currentCalMonth += o; if (currentCalMonth < 0) { currentCalMonth = 11; currentCalYear--; } else if (currentCalMonth > 11) { currentCalMonth = 0; currentCalYear++; } renderDetailCalendar(); }
 
 function buildCalendarGrid(y, m, tId, gId, isD) {
   document.getElementById(tId).innerText = `${MONTH_NAMES[m]} ${y}`;
@@ -391,16 +396,12 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
 
     const cl = (dK === tK && (!isD || activeFilters.length === 0 || t)) ? "cal-day today" : (t ? "cal-day trained" : "cal-day");
     c.innerHTML = `<div class="${cl}">${d}${dotsHtml}</div>`;
-    
-    // ★変更：トレーニングの有無に関わらず、タップでその日の詳細へ飛ぶように変更
     c.onclick = e => { e.stopPropagation(); openDayDetailView(dK, `${y}/${String(m+1).padStart(2,'0')}/${String(d).padStart(2,'0')} (${DAY_LABELS_SHORT[new Date(y,m,d).getDay()]})`, 'home'); };
-    
     g.appendChild(c);
   }
   for (let i = 1; i <= (7 - ((fD + dIM) % 7)) % 7; i++) { g.innerHTML += `<div class="cal-cell"><div class="cal-day other-month">${i}</div></div>`; }
 }
 function toggleFilter(p, b) { const i = activeFilters.indexOf(p); if (i > -1) { activeFilters.splice(i, 1); b.classList.remove("active"); } else { activeFilters.push(p); b.classList.add("active"); } renderDetailCalendar(); }
-function isDateTrained(d, u) { const rs = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === d); if (rs.length === 0) return false; if (!u || activeFilters.length === 0) return true; return rs.some(r => activeFilters.some(f => (r.part||"").includes(f) || (f==="脚" && (r.part||"").includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(r.part)))); }
 
 function renderWeeklySummary() {
   const c = document.getElementById("weekly-list"); c.innerHTML = "";
@@ -420,7 +421,7 @@ function renderWeeklySummary() {
   }
 }
 
-function showError(err) { const l = document.getElementById("loading"); l.style.display = "block"; l.innerText = "エラー: " + err.message; l.style.color = "#FF453A"; }
+function showError(err) { const l = document.getElementById("loading"); if(l){l.style.display = "block"; l.innerText = "エラー: " + err.message; l.style.color = "#FF453A";} }
 function switchTab(t) {
   hideAllViews();
   if (t === 'home') { document.getElementById("view-home").style.display = "block"; document.getElementById("nav-home").classList.add("active"); renderHomeCalendar(); renderWeeklySummary(); pushAppHistory({ view: 'home' }); }
