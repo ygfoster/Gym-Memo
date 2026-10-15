@@ -26,11 +26,9 @@
   <div class="container">
     <div id="loading">読み込み中...</div>
 
-    <!-- 1. 新・ホーム画面（縦積みレイアウト） -->
+    <!-- 1. 新・ホーム画面 -->
     <div id="view-home" style="display: none;">
       <div class="home-layout-vertical">
-        
-        <!-- 上部：巨大化カレンダー＆統計 ＆ 凡例 -->
         <div class="home-calendar-section">
           <div class="calendar-wrapper">
             <div class="cal-header-row"><h1 class="cal-title" id="home-cal-title"></h1></div>
@@ -38,17 +36,9 @@
             <div class="cal-grid" id="home-cal-grid"></div>
           </div>
           
-          <!-- ★追加：色の意味がわかる凡例 -->
-          <div class="cal-legend">
-            <div class="legend-item"><div class="cal-dot" style="background-color:#FF453A;"></div>胸</div>
-            <div class="legend-item"><div class="cal-dot" style="background-color:#0A84FF;"></div>背中</div>
-            <div class="legend-item"><div class="cal-dot" style="background-color:#30D158;"></div>脚</div>
-            <div class="legend-item"><div class="cal-dot" style="background-color:#FF9F0A;"></div>肩</div>
-            <div class="legend-item"><div class="cal-dot" style="background-color:#BF5AF2;"></div>腕</div>
-            <div class="legend-item"><div class="cal-dot" style="background-color:#8E8E93;"></div>他</div>
-          </div>
+          <!-- ★凡例を削除し、視線を誘導する区切り線を追加 -->
+          <hr class="section-divider">
 
-          <!-- ★統計を横並びに -->
           <div class="home-stats-row">
             <div class="stat-box">
               <div class="stat-label">MONTHLY</div>
@@ -61,12 +51,10 @@
           </div>
         </div>
 
-        <!-- 下部：THIS WEEK -->
         <div class="home-this-week-section">
           <div class="section-header" style="margin-top:0;"><span class="section-label">THIS WEEK</span></div>
           <div class="grouped-list compact-list" id="weekly-list"></div>
         </div>
-        
       </div>
       <button class="btn-primary" onclick="openDashboardForDate(null)" style="margin-top: 8px;">ワークアウトを記録</button>
     </div>
@@ -115,7 +103,7 @@
       <button class="btn-primary" id="day-detail-edit-btn" style="margin-top: 20px;">この日の記録を編集</button>
     </div>
 
-    <!-- 4. ワークアウト記録画面 (Alpine.js) -->
+    <!-- 4. ワークアウト記録画面 -->
     <div id="view-dashboard" style="display: none;" x-data="workoutForm" x-cloak>
       <div class="top-nav">
         <button class="nav-back" onclick="navigateBack()"> 戻る</button>
@@ -191,6 +179,31 @@
       <div class="section-header" style="margin-top: 20px;"><span class="section-label">VOLUME PROGRESS (総重量)</span></div>
       <div id="chart-volume-container" style="padding: 16px; position: relative; height: 250px;"><canvas id="volumeChart"></canvas></div>
     </div>
+
+    <!-- ★追加：6. 設定画面 (テーマカラー変更) -->
+    <div id="view-settings" style="display: none;" x-data="settingsForm" x-cloak>
+      <div class="top-nav"><span class="nav-context-date">SETTINGS</span></div>
+      
+      <div class="section-header"><span class="section-label">THEME COLORS</span><span class="section-hint">カレンダーのドット色</span></div>
+      <div class="form-card" style="padding: 8px 16px;">
+        <template x-for="(color, part) in colors" :key="part">
+          <div class="color-setting-row">
+            <div class="color-setting-info">
+              <div class="color-preview" :style="`background-color: ${color}`"></div>
+              <span x-text="part" class="color-part-label"></span>
+            </div>
+            <button class="btn-color-change" @click="openPalette(part)">変更</button>
+            
+            <div class="color-palette" x-show="activePart === part" x-transition>
+              <template x-for="c in palette" :key="c">
+                <div class="palette-swatch" :class="{'selected': color === c}" :style="`background-color: ${c}`" @click="selectColor(c)"></div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
   </div>
 
   <!-- ボトムシートとウィジェット -->
@@ -205,11 +218,13 @@
   <div id="floating-total" class="floating-widget"><div class="floating-total-label">TOTAL</div><div id="floating-total-time" class="floating-total-time">00:00</div></div>
   <div id="floating-rest" class="floating-widget"><div class="rest-circle"><span id="floating-rest-time">03:00</span></div><button id="floating-rest-play" class="float-btn-play" onclick="toggleRestTimer()"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button><button id="floating-rest-reset" class="float-btn-reset" onclick="resetRestTimer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg></button></div>
 
+  <!-- ★ボトムメニューを5分割にし、SETTINGSを追加 -->
   <div id="bottom-nav-bar">
     <div class="nav-item active" id="nav-home" onclick="switchTab('home')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></div><div class="nav-text">HOME</div></div>
     <div class="nav-item" id="nav-log" onclick="switchTab('log')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></div><div class="nav-text">LOG</div></div>
     <div class="nav-item" id="nav-timer" onclick="openTimerSheet()"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div><div class="nav-text">TIMER</div></div>
     <div class="nav-item" id="nav-graph" onclick="switchTab('graph')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line><line x1="2" y1="20" x2="22" y2="20"></line></svg></div><div class="nav-text">GRAPH</div></div>
+    <div class="nav-item" id="nav-settings" onclick="switchTab('settings')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></div><div class="nav-text">SETTING</div></div>
   </div>
 
   <script src="./app.js"></script>
