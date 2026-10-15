@@ -95,8 +95,9 @@ function updateTimerDisplays() {
   const tStr = formatTime(restRemainingSeconds);
   document.getElementById('floating-rest-time').innerText = tStr; document.getElementById('sheet-rest-time').innerText = tStr;
   const pbS = document.getElementById('sheet-play-btn'), pbF = document.getElementById('floating-rest-play'), cI = document.querySelector('.timer-circle-iphone');
-  if (isResting) { pbS.innerText = "一時停止"; pbS.className = "sheet-circle-btn stop"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`; cI.className = "timer-circle-iphone running"; }
-  else { pbS.innerText = "開始"; pbS.className = "sheet-circle-btn play"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`; cI.className = "timer-circle-iphone stopped"; }
+  // ★修正：タイマー画面のテキストを Stop / Start に変更
+  if (isResting) { pbS.innerText = "Stop"; pbS.className = "sheet-circle-btn stop"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`; cI.className = "timer-circle-iphone running"; }
+  else { pbS.innerText = "Start"; pbS.className = "sheet-circle-btn play"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`; cI.className = "timer-circle-iphone stopped"; }
 }
 function selectPreset(s, b) { pauseRestTimer(); currentPresetSeconds = s; restRemainingSeconds = s; document.querySelectorAll('.preset-btn').forEach(e => e.classList.remove('active')); b.classList.add('active'); updateTimerDisplays(); }
 function adjustRestTime(a) { restRemainingSeconds += a; if (restRemainingSeconds < 0) restRemainingSeconds = 0; if (isResting) restEndTime += a * 1000; updateTimerDisplays(); }
@@ -200,6 +201,36 @@ document.addEventListener('alpine:init', () => {
       .then(res => res.json()).then(r => { this.isSaving = false; if (r.success) { fin(r.updatedHistory); } else { hideSavingOverlayImmediate(); this.saveMsg = "エラー: " + r.error; this.saveMsgColor = "#FF453A"; } })
       .catch(e => { saveOff(); });
     },
+    
+    // ★追加：LOG画面での削除処理
+    deleteThisDay() {
+      if(!currentRecordingDateStr) return;
+      if(!confirm(`${document.getElementById("recording-target-label").innerText} の記録をすべて削除しますか？`)) return;
+      
+      this.isSaving = true;
+      showSavingOverlay();
+      
+      const payload = { action: 'saveTrainingLog', targetDate: currentRecordingDateStr, trainingData: [], token: API_TOKEN };
+      
+      fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) })
+      .then(res => res.json()).then(r => { 
+        this.isSaving = false; 
+        if (r.success) { 
+          globalTrainingHistory = r.updatedHistory || [];
+          localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(currentRecordingDateStr));
+          this.hasDraft = false;
+          finishSavingOverlay(() => { openHomeView(); });
+        } else { 
+          hideSavingOverlayImmediate(); 
+          alert("エラー: " + r.error); 
+        } 
+      })
+      .catch(e => { 
+        this.isSaving = false;
+        hideSavingOverlayImmediate();
+        alert("通信エラー");
+      });
+    },
     adjustTextarea(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
   }));
 
@@ -272,7 +303,6 @@ function openHomeView(sH) {
   window.scrollTo(0, 0); 
 }
 
-// ★修正：LOG画面での前日/翌日切り替えアニメーションを追加
 window.shiftLogDay = function(offset) {
   if (!currentRecordingDateStr) return;
   const d = parseDateKeyToObj(currentRecordingDateStr);
@@ -280,7 +310,7 @@ window.shiftLogDay = function(offset) {
   openDashboardForDate(formatDateKey(n), false, offset > 0 ? "slide-anim-from-right" : "slide-anim-from-left");
 };
 
-// ★修正：LOG画面にスライドアニメーションを追加
+// ★修正：LOG画面にスライドアニメーションを適用
 function openDashboardForDate(tK, sH, slideClass) {
   hideAllViews(); 
   const v = document.getElementById("view-dashboard");
@@ -310,6 +340,127 @@ function openDashboardForDate(tK, sH, slideClass) {
 function loadHealthDataIntoPrefix(dK, p) { const n = normalizeDateStr(dK); if (globalHealthMap[n]) { renderVitalsToDOM(globalHealthMap[n], p); } else { renderVitalsToDOM(null, p); fetch(GAS_URL + '?action=getDataForDate&date=' + formatWithZeroPad(n) + '&token=' + API_TOKEN).then(res => res.json()).then(data => { if (data && !data.error) { globalHealthMap[n] = data; renderVitalsToDOM(data, p); } }).catch(()=>{}); } }
 function renderVitalsToDOM(data, p) { document.getElementById(p+"sleep-time").innerText = cleanMetric(data?.sleep, ""); document.getElementById(p+"cal-intake").innerText = cleanMetric(data?.intake, ""); document.getElementById(p+"cal-burned").innerText = cleanMetric(data?.burned, ""); document.getElementById(p+"p-val").innerText = cleanMetric(data?.protein, ""); document.getElementById(p+"f-val").innerText = cleanMetric(data?.fat, ""); document.getElementById(p+"c-val").innerText = cleanMetric(data?.carb, ""); const d = data ? parseInt(String(data.balance).replace(/[^-0-9]/g, ""), 10) : NaN; document.getElementById(p+"cal-balance").innerText = isNaN(d) ? "" : (d > 0 ? "+" : "") + d.toLocaleString() + " kcal"; }
 
+// ★カレンダー描画を安全に行うため、すべて文字列キャストで保護
+function normalizeDateStr(s) { if (!s) return ""; const n = String(s).match(/\d+/g); if (n && n.length >= 3) return `${parseInt(n[0],10)}/${parseInt(n[1],10)}/${parseInt(n[2],10)}`; return String(s).trim(); }
+function parseDateKeyToObj(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) return new Date(parseInt(n[0],10), parseInt(n[1],10)-1, parseInt(n[2],10)); return new Date(); }
+function formatDateKey(d) { return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`; }
+function formatWithZeroPad(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) return `${n[0]}/${String(parseInt(n[1],10)).padStart(2,'0')}/${String(parseInt(n[2],10)).padStart(2,'0')}`; return String(s); }
+function formatDisplayDateWithDay(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) { const y = parseInt(n[0],10), m = parseInt(n[1],10), d = parseInt(n[2],10); return `${y}/${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')} (${DAY_LABELS_SHORT[new Date(y, m-1, d).getDay()]})`; } return String(s); }
+function cleanMetric(v, suf) { if (v === undefined || v === null) return ""; const s = String(v).trim(); if (s === "" || s === "-" || s.includes("#") || s === "NaN") return ""; return suf ? `${s} ${suf}` : s; }
+function parseDetailsToSets(s) { if (!s) return []; return String(s).split('\n').filter(l => l.trim() !== '').map(l => { const m = l.match(/:\s*([0-9.]+|-)(?:kg)?\s*[×xXﾗ]\s*([0-9.]+|-)(?:回)?/); if (m) return { w: m[1] === '-' ? '' : m[1], r: m[2] === '-' ? '' : m[2] }; return { w: '', r: '' }; }); }
+
+function updateHomeStats() {
+  if (!globalTrainingHistory) return; const ud = new Set(), md = new Set();
+  globalTrainingHistory.forEach(r => { const dStr = normalizeDateStr(r.date); ud.add(dStr); const d = parseDateKeyToObj(dStr); if (d.getFullYear() === currentCalYear && d.getMonth() === currentCalMonth) md.add(dStr); });
+  if(document.getElementById("home-monthly-days")) document.getElementById("home-monthly-days").innerText = md.size;
+  if(document.getElementById("home-total-days")) document.getElementById("home-total-days").innerText = ud.size;
+}
+
+function getDateTrainedParts(dateKey, useFilter) {
+  const records = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === dateKey);
+  let filtered = records;
+  if (useFilter && activeFilters.length > 0) {
+    filtered = records.filter(r => activeFilters.some(f => (r.part||"").includes(f) || (f==="脚" && (r.part||"").includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(r.part))));
+  }
+  const parts = new Set();
+  filtered.forEach(r => { let pt = String(r.part || "").trim(); if (pt === "足") pt = "脚"; if (["胸", "背中", "脚", "肩", "腕"].includes(pt)) parts.add(pt); else parts.add("その他"); });
+  return Array.from(parts);
+}
+
+// ★修正：カレンダー生成時に上書きバグが発生しないようDOMツリーを安全に構築
+function renderHomeCalendar() { 
+  buildCalendarGrid(currentCalYear, currentCalMonth, "home-cal-title", "home-cal-grid", false); 
+  updateHomeStats(); 
+}
+
+function buildCalendarGrid(y, m, tId, gId, isD) {
+  document.getElementById(tId).innerText = `${MONTH_NAMES[m]} ${y}`;
+  const g = document.getElementById(gId);
+  g.innerHTML = ""; // 完全に中身をクリア
+
+  const fD = (new Date(y, m, 1).getDay() + 6) % 7; 
+  const dIM = new Date(y, m+1, 0).getDate(); 
+  const pDIM = new Date(y, m, 0).getDate(); 
+  const tK = formatDateKey(new Date());
+
+  const frag = document.createDocumentFragment();
+
+  // 前月の空白分
+  for (let i = fD - 1; i >= 0; i--) { 
+    const c = document.createElement("div"); c.className = "cal-cell";
+    c.innerHTML = `<div class="cal-day other-month">${pDIM - i}</div>`;
+    frag.appendChild(c);
+  }
+  
+  // 今月分
+  for (let d = 1; d <= dIM; d++) {
+    const c = document.createElement("div"); c.className = "cal-cell clickable";
+    const dK = `${y}/${m+1}/${d}`; const t = isDateTrained(dK, isD);
+    
+    let dotsHtml = '';
+    if (t) {
+      const parts = getDateTrainedParts(dK, isD);
+      if (parts.length > 0) {
+        dotsHtml = '<div class="cal-dots-wrap">';
+        parts.slice(0, 4).forEach(pt => {
+          let pc = partColors || DEFAULT_COLORS;
+          let color = pc[pt] || pc["その他"] || '#8E8E93';
+          dotsHtml += `<div class="cal-dot" style="background-color: ${color};"></div>`;
+        });
+        dotsHtml += '</div>';
+      }
+    }
+
+    const cl = (dK === tK && (!isD || activeFilters.length === 0 || t)) ? "cal-day today" : (t ? "cal-day trained" : "cal-day");
+    c.innerHTML = `<div class="${cl}">${d}${dotsHtml}</div>`;
+    c.onclick = e => { e.stopPropagation(); openDayDetailView(dK, `${y}/${String(m+1).padStart(2,'0')}/${String(d).padStart(2,'0')} (${DAY_LABELS_SHORT[new Date(y,m,d).getDay()]})`, 'home'); };
+    frag.appendChild(c);
+  }
+  
+  // 翌月の空白分
+  for (let i = 1; i <= (7 - ((fD + dIM) % 7)) % 7; i++) { 
+    const c = document.createElement("div"); c.className = "cal-cell";
+    c.innerHTML = `<div class="cal-day other-month">${i}</div>`;
+    frag.appendChild(c);
+  }
+  
+  g.appendChild(frag); // 最後に一括で追加
+}
+
+function renderWeeklySummary() {
+  const c = document.getElementById("weekly-list"); c.innerHTML = "";
+  const n = new Date(), tK = formatDateKey(n), m = new Date(n.getFullYear(), n.getMonth(), n.getDate() + ((n.getDay()===0)?-6:1-n.getDay()));
+  for (let i = 0; i < 7; i++) {
+    const t = new Date(m.getFullYear(), m.getMonth(), m.getDate() + i), k = formatDateKey(t);
+    const rs = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === k);
+    let s = "オフ", cl = "rest";
+    if (rs.length > 0) {
+      cl = ""; const pm = {}; rs.forEach(r => { pm[r.part||"未指定"] = (pm[r.part||"未指定"]||0) + (r.sets||0); });
+      s = Object.keys(pm).map(p => `${p} / ${pm[p]}セット`).join(" , ");
+    }
+    const rE = document.createElement("div"); rE.className = `list-row-compact ${k === tK ? 'is-today' : ''}`;
+    rE.onclick = () => openDayDetailView(k, formatDisplayDateWithDay(k), 'home');
+    rE.innerHTML = `<div class="list-date-col">${t.getMonth()+1}/${t.getDate()}(${DAY_LABELS_SHORT[t.getDay()]})</div><div class="list-desc-col ${cl}">${s}</div>`;
+    c.appendChild(rE);
+  }
+}
+
+// ★修正：カレンダーの月切り替えにスライドアニメーションを適用
+window.changeHomeMonth = function(offset) { 
+  currentCalMonth += offset; 
+  if (currentCalMonth < 0) { currentCalMonth = 11; currentCalYear--; } 
+  else if (currentCalMonth > 11) { currentCalMonth = 0; currentCalYear++; } 
+  
+  const v = document.getElementById("home-cal-grid");
+  if(v) {
+    v.classList.remove("slide-anim-from-right", "slide-anim-from-left");
+    void v.offsetWidth;
+    v.classList.add(offset > 0 ? "slide-anim-from-right" : "slide-anim-from-left");
+  }
+  renderHomeCalendar(); 
+};
+
+/* --- 削除詳細画面のボタン処理 --- */
 document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("day-detail-delete-btn")?.addEventListener("click", () => {
     if(!confirm(`${document.getElementById("day-detail-title").innerText} の記録をすべて削除しますか？`)) return;
@@ -351,14 +502,8 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
 
 function shiftDetailDay(o) { if (!currentDetailDateKey) return; const d = parseDateKeyToObj(currentDetailDateKey); const n = new Date(d.getFullYear(), d.getMonth(), d.getDate() + o); openDayDetailView(formatDateKey(n), formatDisplayDateWithDay(formatDateKey(n)), null, o > 0 ? "slide-anim-from-right" : "slide-anim-from-left", true); }
 
-function initDetailSwipe() {
-  let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-day-detail"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftDetailDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }});
-}
-
-function initLogSwipe() {
-  let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-dashboard"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftLogDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }});
-}
-
+function initDetailSwipe() { let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-day-detail"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftDetailDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }}); }
+function initLogSwipe() { let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-dashboard"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftLogDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }}); }
 function initCalendarSwipe() {
   let sX = 0, sY = 0; const v = document.getElementById("home-calendar-swipe-area"); if (!v) return;
   const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) { changeHomeMonth(dx > 0 ? -1 : 1); } };
@@ -366,125 +511,9 @@ function initCalendarSwipe() {
   v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true });
 }
 
-// ★修正：カレンダー月切り替え時のアニメーション追加
-window.changeHomeMonth = function(offset) { 
-  currentCalMonth += offset; 
-  if (currentCalMonth < 0) { currentCalMonth = 11; currentCalYear--; } 
-  else if (currentCalMonth > 11) { currentCalMonth = 0; currentCalYear++; } 
-  
-  const v = document.getElementById("home-calendar-swipe-area");
-  if(v) {
-    v.classList.remove("slide-anim-from-right", "slide-anim-from-left");
-    void v.offsetWidth;
-    v.classList.add(offset > 0 ? "slide-anim-from-right" : "slide-anim-from-left");
-  }
-  renderHomeCalendar(); 
-};
-
 function showSavingOverlay() { const o = document.getElementById("saving-overlay"); document.getElementById("saving-spinner").style.display="block"; document.getElementById("saving-check").style.display="none"; document.getElementById("saving-text").innerText="記録を処理中..."; o.classList.add("active"); }
 function finishSavingOverlay(cb) { document.getElementById("saving-spinner").style.display="none"; document.getElementById("saving-check").style.display="flex"; document.getElementById("saving-text").innerText="完了しました"; setTimeout(()=>{ document.getElementById("saving-overlay").classList.remove("active"); if (cb) cb(); }, 450); }
 function hideSavingOverlayImmediate() { document.getElementById("saving-overlay").classList.remove("active"); }
-function normalizeDateStr(s) { if (!s) return ""; const n = s.match(/\d+/g); if (n && n.length >= 3) return `${parseInt(n[0],10)}/${parseInt(n[1],10)}/${parseInt(n[2],10)}`; return s.trim(); }
-function parseDateKeyToObj(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) return new Date(parseInt(n[0],10), parseInt(n[1],10)-1, parseInt(n[2],10)); return new Date(); }
-function formatDateKey(d) { return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`; }
-function formatWithZeroPad(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) return `${n[0]}/${String(parseInt(n[1],10)).padStart(2,'0')}/${String(parseInt(n[2],10)).padStart(2,'0')}`; return s; }
-function formatDisplayDateWithDay(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) { const y = parseInt(n[0],10), m = parseInt(n[1],10), d = parseInt(n[2],10); return `${y}/${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')} (${DAY_LABELS_SHORT[new Date(y, m-1, d).getDay()]})`; } return s; }
-function cleanMetric(v, suf) { if (v === undefined || v === null) return ""; const s = String(v).trim(); if (s === "" || s === "-" || s.includes("#") || s === "NaN") return ""; return suf ? `${s} ${suf}` : s; }
-function parseDetailsToSets(s) { if (!s) return []; return s.split('\n').filter(l => l.trim() !== '').map(l => { const m = l.match(/:\s*([0-9.]+|-)(?:kg)?\s*[×xXﾗ]\s*([0-9.]+|-)(?:回)?/); if (m) return { w: m[1] === '-' ? '' : m[1], r: m[2] === '-' ? '' : m[2] }; return { w: '', r: '' }; }); }
-
-function updateHomeStats() {
-  if (!globalTrainingHistory) return; const ud = new Set(), md = new Set();
-  globalTrainingHistory.forEach(r => { const dStr = normalizeDateStr(r.date); ud.add(dStr); const d = parseDateKeyToObj(dStr); if (d.getFullYear() === currentCalYear && d.getMonth() === currentCalMonth) md.add(dStr); });
-  if(document.getElementById("home-monthly-days")) document.getElementById("home-monthly-days").innerText = md.size;
-  if(document.getElementById("home-total-days")) document.getElementById("home-total-days").innerText = ud.size;
-}
-
-function getDateTrainedParts(dateKey, useFilter) {
-  const records = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === dateKey);
-  let filtered = records;
-  if (useFilter && activeFilters.length > 0) {
-    filtered = records.filter(r => activeFilters.some(f => (r.part||"").includes(f) || (f==="脚" && (r.part||"").includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(r.part))));
-  }
-  const parts = new Set();
-  filtered.forEach(r => { let pt = (r.part || "").trim(); if (pt === "足") pt = "脚"; if (["胸", "背中", "脚", "肩", "腕"].includes(pt)) parts.add(pt); else parts.add("その他"); });
-  return Array.from(parts);
-}
-
-// ★修正：カレンダーグリッドの完全再構築（上書きバグ解消）
-function renderHomeCalendar() { 
-  buildCalendarGrid(currentCalYear, currentCalMonth, "home-cal-title", "home-cal-grid", false); 
-  updateHomeStats(); 
-}
-
-function buildCalendarGrid(y, m, tId, gId, isD) {
-  document.getElementById(tId).innerText = `${MONTH_NAMES[m]} ${y}`;
-  const g = document.getElementById(gId);
-  g.innerHTML = ""; // コンテナを完全にクリア
-
-  const fD = (new Date(y, m, 1).getDay() + 6) % 7; 
-  const dIM = new Date(y, m+1, 0).getDate(); 
-  const pDIM = new Date(y, m, 0).getDate(); 
-  const tK = formatDateKey(new Date());
-
-  const frag = document.createDocumentFragment();
-
-  for (let i = fD - 1; i >= 0; i--) { 
-    const c = document.createElement("div"); c.className = "cal-cell";
-    c.innerHTML = `<div class="cal-day other-month">${pDIM - i}</div>`;
-    frag.appendChild(c);
-  }
-  
-  for (let d = 1; d <= dIM; d++) {
-    const c = document.createElement("div"); c.className = "cal-cell clickable";
-    const dK = `${y}/${m+1}/${d}`; const t = isDateTrained(dK, isD);
-    
-    let dotsHtml = '';
-    if (t) {
-      const parts = getDateTrainedParts(dK, isD);
-      if (parts.length > 0) {
-        dotsHtml = '<div class="cal-dots-wrap">';
-        parts.slice(0, 4).forEach(pt => {
-          let color = partColors[pt] || partColors["その他"];
-          dotsHtml += `<div class="cal-dot" style="background-color: ${color};"></div>`;
-        });
-        dotsHtml += '</div>';
-      }
-    }
-
-    const cl = (dK === tK && (!isD || activeFilters.length === 0 || t)) ? "cal-day today" : (t ? "cal-day trained" : "cal-day");
-    c.innerHTML = `<div class="${cl}">${d}${dotsHtml}</div>`;
-    c.onclick = e => { e.stopPropagation(); openDayDetailView(dK, `${y}/${String(m+1).padStart(2,'0')}/${String(d).padStart(2,'0')} (${DAY_LABELS_SHORT[new Date(y,m,d).getDay()]})`, 'home'); };
-    frag.appendChild(c);
-  }
-  
-  for (let i = 1; i <= (7 - ((fD + dIM) % 7)) % 7; i++) { 
-    const c = document.createElement("div"); c.className = "cal-cell";
-    c.innerHTML = `<div class="cal-day other-month">${i}</div>`;
-    frag.appendChild(c);
-  }
-  
-  g.appendChild(frag); // 全ての要素を安全に追加
-}
-
-function toggleFilter(p, b) { const i = activeFilters.indexOf(p); if (i > -1) { activeFilters.splice(i, 1); b.classList.remove("active"); } else { activeFilters.push(p); b.classList.add("active"); } renderDetailCalendar(); }
-
-function renderWeeklySummary() {
-  const c = document.getElementById("weekly-list"); c.innerHTML = "";
-  const n = new Date(), tK = formatDateKey(n), m = new Date(n.getFullYear(), n.getMonth(), n.getDate() + ((n.getDay()===0)?-6:1-n.getDay()));
-  for (let i = 0; i < 7; i++) {
-    const t = new Date(m.getFullYear(), m.getMonth(), m.getDate() + i), k = formatDateKey(t);
-    const rs = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === k);
-    let s = "オフ", cl = "rest";
-    if (rs.length > 0) {
-      cl = ""; const pm = {}; rs.forEach(r => { pm[r.part||"未指定"] = (pm[r.part||"未指定"]||0) + (r.sets||0); });
-      s = Object.keys(pm).map(p => `${p} / ${pm[p]}セット`).join(" , ");
-    }
-    const rE = document.createElement("div"); rE.className = `list-row-compact ${k === tK ? 'is-today' : ''}`;
-    rE.onclick = () => openDayDetailView(k, formatDisplayDateWithDay(k), 'home');
-    rE.innerHTML = `<div class="list-date-col">${t.getMonth()+1}/${t.getDate()}(${DAY_LABELS_SHORT[t.getDay()]})</div><div class="list-desc-col ${cl}">${s}</div>`;
-    c.appendChild(rE);
-  }
-}
 
 function showError(err) { const l = document.getElementById("loading"); if(l){l.style.display = "block"; l.innerText = "エラー: " + err.message; l.style.color = "#FF453A";} }
 function switchTab(t) {
