@@ -28,11 +28,11 @@ const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
 document.addEventListener("DOMContentLoaded", function() {
   initBrowserHistoryGuard();
   initDetailSwipe();
+  initTimerSheetSwipe(); // ★追加：タイマーシートのスワイプダウン処理
 
-  // フローティングUIをドラッグ可能にする
   makeDraggable(document.getElementById('floating-total'));
   makeDraggable(document.getElementById('floating-rest'));
-  updateTimerDisplays(); // 初期タイマーセット
+  updateTimerDisplays();
 
   fetch(GAS_URL + '?action=getInitialData&limit=45&offset=0&token=' + API_TOKEN)
     .then(response => response.json())
@@ -48,7 +48,6 @@ document.addEventListener("DOMContentLoaded", function() {
   });
 });
 
-// タスクキル後、1時間放置でHOMEに戻す処理
 document.addEventListener("visibilitychange", function() {
   if (document.visibilityState === 'visible') {
     try {
@@ -73,9 +72,7 @@ document.addEventListener("visibilitychange", function() {
 /* ======================================================================
    新タイマーシステム（TOTAL & REST）
 ====================================================================== */
-
-// --- 変数群 ---
-let currentPresetSeconds = 180; // 初期プリセット：胸3分
+let currentPresetSeconds = 180;
 let restRemainingSeconds = 180;
 let isResting = false;
 let restTimerInterval = null;
@@ -87,7 +84,6 @@ let totalSeconds = 0;
 let isTotalTimerRunning = false;
 let wakeLock = null;
 
-// 時間のフォーマット (00:00)
 function formatTime(seconds) {
   if (seconds < 0) seconds = 0;
   const m = Math.floor(seconds / 60).toString().padStart(2, '0');
@@ -95,7 +91,6 @@ function formatTime(seconds) {
   return `${m}:${s}`;
 }
 
-// 画面の更新（小窓とボトムシートを同期）
 function updateTimerDisplays() {
   const timeStr = formatTime(restRemainingSeconds);
   document.getElementById('floating-rest-time').innerText = timeStr;
@@ -118,48 +113,32 @@ function updateTimerDisplays() {
   }
 }
 
-// プリセットを選択
 function selectPreset(seconds, btn) {
   pauseRestTimer();
   currentPresetSeconds = seconds;
   restRemainingSeconds = seconds;
-  
-  // UIのボタン色切り替え
   document.querySelectorAll('.preset-btn').forEach(el => el.classList.remove('active'));
   btn.classList.add('active');
-  
   updateTimerDisplays();
 }
 
-// ±10秒の調整（その場限り）
 function adjustRestTime(amount) {
   restRemainingSeconds += amount;
   if (restRemainingSeconds < 0) restRemainingSeconds = 0;
-  
-  // 動いている最中なら、内部の終了予定時刻もズラす
-  if (isResting) {
-    restEndTime += amount * 1000;
-  }
+  if (isResting) { restEndTime += amount * 1000; }
   updateTimerDisplays();
 }
 
-// タイマーのリセット（キャンセル）
 function resetRestTimer() {
   pauseRestTimer();
-  restRemainingSeconds = currentPresetSeconds; // プリセットの時間に戻す
+  restRemainingSeconds = currentPresetSeconds;
   updateTimerDisplays();
 }
 
-// 開始・停止の切り替え
 function toggleRestTimer() {
-  if (isResting) {
-    pauseRestTimer();
-  } else {
-    startRestTimer();
-  }
+  if (isResting) { pauseRestTimer(); } else { startRestTimer(); }
 }
 
-// タイマー一時停止
 function pauseRestTimer() {
   isResting = false;
   clearInterval(restTimerInterval);
@@ -167,13 +146,11 @@ function pauseRestTimer() {
   updateTimerDisplays();
 }
 
-// タイマー開始
 async function startRestTimer() {
   if (restRemainingSeconds <= 0) return; 
   isResting = true;
   restEndTime = Date.now() + (restRemainingSeconds * 1000);
   
-  // 最初のRESTスタートで、TOTALも自動で一生動き出す
   if (!isTotalTimerRunning) {
     isTotalTimerRunning = true;
     totalStartTime = Date.now() - (totalSeconds * 1000);
@@ -184,7 +161,6 @@ async function startRestTimer() {
   }
   
   try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
-  
   updateTimerDisplays();
   
   restTimerInterval = setInterval(() => {
@@ -193,32 +169,25 @@ async function startRestTimer() {
       restRemainingSeconds = remaining;
       updateTimerDisplays();
     } else {
-      // 0になった時
       clearInterval(restTimerInterval);
       isResting = false;
       restRemainingSeconds = 0;
       updateTimerDisplays();
-      
-      // バイブレーションを5回繰り返す
       if (navigator.vibrate) navigator.vibrate([500, 500, 500, 500, 500, 500, 500, 500, 500]); 
-      
       if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
-      
-      // 1秒後に自動でプリセット秒数に戻す
       setTimeout(() => { resetRestTimer(); }, 1000);
     }
   }, 200);
 }
 
-// ボトムシートの開閉
 function openTimerSheet() {
   document.getElementById('timer-bottom-sheet').classList.add('open');
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   document.getElementById('nav-timer').classList.add('active');
 }
+
 function closeTimerSheet() {
   document.getElementById('timer-bottom-sheet').classList.remove('open');
-  // アクティブなタブの色を元に戻す
   const currentView = getCurrentVisibleView();
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   if (currentView === 'home' || currentView === 'calendar') document.getElementById('nav-home').classList.add('active');
@@ -226,36 +195,55 @@ function closeTimerSheet() {
   if (currentView === 'graph') document.getElementById('nav-graph').classList.add('active');
 }
 
-// 要素をドラッグできるようにする関数
+// ★追加：タイマーシートを下スワイプで閉じる ＆ リロード防止処理
+function initTimerSheetSwipe() {
+  const sheet = document.getElementById('timer-bottom-sheet');
+  if (!sheet) return;
+  let startY = 0;
+
+  sheet.addEventListener('touchstart', (e) => {
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  sheet.addEventListener('touchmove', (e) => {
+    const y = e.touches[0].clientY;
+    // タイマー画面で下に引っ張った時は、ブラウザのリロード機能を発動させない
+    if (y > startY) {
+      e.preventDefault(); 
+    }
+  }, { passive: false });
+
+  sheet.addEventListener('touchend', (e) => {
+    const y = e.changedTouches[0].clientY;
+    // 60px以上下にスワイプされたらシートを閉じる
+    if (y - startY > 60) {
+      closeTimerSheet();
+    }
+  }, { passive: true });
+}
+
 function makeDraggable(element) {
   if(!element) return;
   let startX = 0, startY = 0, initialX = 0, initialY = 0;
-  
   element.addEventListener('touchstart', dragStart, {passive: false});
   element.addEventListener('touchmove', drag, {passive: false});
 
   function dragStart(e) {
-    // ボタンのタップ時はドラッグを発動させない
-    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button')) return; 
-    
+    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button') || e.target.tagName.toLowerCase() === 'svg') return; 
     initialX = element.getBoundingClientRect().left;
     initialY = element.getBoundingClientRect().top;
     startX = e.touches[0].clientX;
     startY = e.touches[0].clientY;
   }
   function drag(e) {
-    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button')) return;
-    e.preventDefault(); // 画面スクロールを防止
-    
+    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button') || e.target.tagName.toLowerCase() === 'svg') return;
+    e.preventDefault(); 
     let dx = e.touches[0].clientX - startX;
     let dy = e.touches[0].clientY - startY;
     let newLeft = initialX + dx;
     let newTop = initialY + dy;
-    
-    // 画面外に消えないように制限
     newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - element.offsetWidth));
     newTop = Math.max(0, Math.min(newTop, window.innerHeight - element.offsetHeight));
-    
     element.style.left = newLeft + 'px';
     element.style.top = newTop + 'px';
     element.style.bottom = 'auto'; 
@@ -264,9 +252,8 @@ function makeDraggable(element) {
 }
 
 /* ======================================================================
-   以下、既存のデータ取得・UI管理用ロジック
+   既存のデータ取得・UI管理用ロジック
 ====================================================================== */
-
 function initApp(data) {
   document.getElementById("loading").style.display = "none";
   if (data) {
@@ -874,13 +861,42 @@ function switchTab(tabName) {
 }
 
 let rmChartInstance = null; let volumeChartInstance = null;
+
+// ★変更：グラフの種目選択を部位ごとにオプトグループでまとめる処理
 function initGraphView() {
-  const select = document.getElementById("graph-exercise-select"); const currentVal = select.value;
-  const uniqueExercises = [...new Set(globalTrainingHistory.map(r => r.exercise).filter(e => e && e !== "種目不明"))].sort();
-  select.innerHTML = '<option value="">グラフ化する種目を選択...</option>';
-  uniqueExercises.forEach(ex => { const opt = document.createElement("option"); opt.value = ex; opt.innerText = ex; select.appendChild(opt); });
-  if (currentVal && uniqueExercises.includes(currentVal)) { select.value = currentVal; updateGraphs(); } else clearGraphs();
+  const select = document.getElementById("graph-exercise-select"); 
+  const currentVal = select.value;
+  
+  const partMap = { "胸": new Set(), "背中": new Set(), "脚": new Set(), "肩": new Set(), "腕": new Set(), "その他": new Set() };
+  
+  globalTrainingHistory.forEach(r => {
+    const ex = (r.exercise || "").trim();
+    let pt = (r.part || "").trim();
+    if (!ex || ex === "種目不明") return;
+    if (pt === "足") pt = "脚";
+    if (!["胸", "背中", "脚", "肩", "腕"].includes(pt)) { pt = "その他"; }
+    partMap[pt].add(ex);
+  });
+
+  let html = '<option value="">グラフ化する種目を選択...</option>';
+  const order = ["胸", "背中", "脚", "肩", "腕", "その他"];
+  
+  order.forEach(part => {
+    const exercises = Array.from(partMap[part]).sort();
+    if (exercises.length > 0) {
+      html += `<optgroup label="【${part}】">`;
+      exercises.forEach(ex => { html += `<option value="${ex}">${ex}</option>`; });
+      html += `</optgroup>`;
+    }
+  });
+  
+  select.innerHTML = html;
+  
+  let hasVal = false;
+  Array.from(select.options).forEach(opt => { if(opt.value === currentVal) hasVal = true; });
+  if (currentVal && hasVal) { select.value = currentVal; updateGraphs(); } else { clearGraphs(); }
 }
+
 function clearGraphs() { if (rmChartInstance) rmChartInstance.destroy(); if (volumeChartInstance) volumeChartInstance.destroy(); }
 function updateGraphs() {
   const targetExercise = document.getElementById("graph-exercise-select").value;
