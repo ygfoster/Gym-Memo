@@ -29,6 +29,11 @@ document.addEventListener("DOMContentLoaded", function() {
   initBrowserHistoryGuard();
   initDetailSwipe();
 
+  // フローティングUIをドラッグ可能にする
+  makeDraggable(document.getElementById('floating-total'));
+  makeDraggable(document.getElementById('floating-rest'));
+  updateTimerDisplays(); // 初期タイマーセット
+
   fetch(GAS_URL + '?action=getInitialData&limit=45&offset=0&token=' + API_TOKEN)
     .then(response => response.json())
     .then(data => {
@@ -43,20 +48,17 @@ document.addEventListener("DOMContentLoaded", function() {
   });
 });
 
-// ★追加：アプリがバックグラウンドから復帰した時にも時間をチェック
+// タスクキル後、1時間放置でHOMEに戻す処理
 document.addEventListener("visibilitychange", function() {
   if (document.visibilityState === 'visible') {
     try {
       const raw = localStorage.getItem(STORAGE_VIEW_KEY);
       if (raw) {
         const saved = JSON.parse(raw);
-        if (saved.timestamp && (Date.now() - saved.timestamp > 3600000)) { // 1時間(3600000ms)経過
-          openHomeView(); // 強制的にホームへ
-        }
+        if (saved.timestamp && (Date.now() - saved.timestamp > 3600000)) { openHomeView(); }
       }
     } catch(e){}
   } else {
-    // バックグラウンドに行く瞬間に今の時間を記録
     try {
       const raw = localStorage.getItem(STORAGE_VIEW_KEY);
       if (raw) {
@@ -67,6 +69,203 @@ document.addEventListener("visibilitychange", function() {
     } catch(e){}
   }
 });
+
+/* ======================================================================
+   新タイマーシステム（TOTAL & REST）
+====================================================================== */
+
+// --- 変数群 ---
+let currentPresetSeconds = 180; // 初期プリセット：胸3分
+let restRemainingSeconds = 180;
+let isResting = false;
+let restTimerInterval = null;
+let restEndTime = 0;
+
+let totalTimerInterval = null;
+let totalStartTime = 0;
+let totalSeconds = 0;
+let isTotalTimerRunning = false;
+let wakeLock = null;
+
+// 時間のフォーマット (00:00)
+function formatTime(seconds) {
+  if (seconds < 0) seconds = 0;
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const s = (Math.floor(seconds) % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+// 画面の更新（小窓とボトムシートを同期）
+function updateTimerDisplays() {
+  const timeStr = formatTime(restRemainingSeconds);
+  document.getElementById('floating-rest-time').innerText = timeStr;
+  document.getElementById('sheet-rest-time').innerText = timeStr;
+  
+  const playBtnSheet = document.getElementById('sheet-play-btn');
+  const playBtnFloat = document.getElementById('floating-rest-play');
+  const circleIphone = document.querySelector('.timer-circle-iphone');
+  
+  if (isResting) {
+    playBtnSheet.innerText = "一時停止";
+    playBtnSheet.className = "sheet-circle-btn stop";
+    playBtnFloat.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;
+    circleIphone.className = "timer-circle-iphone running";
+  } else {
+    playBtnSheet.innerText = "開始";
+    playBtnSheet.className = "sheet-circle-btn play";
+    playBtnFloat.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
+    circleIphone.className = "timer-circle-iphone stopped";
+  }
+}
+
+// プリセットを選択
+function selectPreset(seconds, btn) {
+  pauseRestTimer();
+  currentPresetSeconds = seconds;
+  restRemainingSeconds = seconds;
+  
+  // UIのボタン色切り替え
+  document.querySelectorAll('.preset-btn').forEach(el => el.classList.remove('active'));
+  btn.classList.add('active');
+  
+  updateTimerDisplays();
+}
+
+// ±10秒の調整（その場限り）
+function adjustRestTime(amount) {
+  restRemainingSeconds += amount;
+  if (restRemainingSeconds < 0) restRemainingSeconds = 0;
+  
+  // 動いている最中なら、内部の終了予定時刻もズラす
+  if (isResting) {
+    restEndTime += amount * 1000;
+  }
+  updateTimerDisplays();
+}
+
+// タイマーのリセット（キャンセル）
+function resetRestTimer() {
+  pauseRestTimer();
+  restRemainingSeconds = currentPresetSeconds; // プリセットの時間に戻す
+  updateTimerDisplays();
+}
+
+// 開始・停止の切り替え
+function toggleRestTimer() {
+  if (isResting) {
+    pauseRestTimer();
+  } else {
+    startRestTimer();
+  }
+}
+
+// タイマー一時停止
+function pauseRestTimer() {
+  isResting = false;
+  clearInterval(restTimerInterval);
+  if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
+  updateTimerDisplays();
+}
+
+// タイマー開始
+async function startRestTimer() {
+  if (restRemainingSeconds <= 0) return; 
+  isResting = true;
+  restEndTime = Date.now() + (restRemainingSeconds * 1000);
+  
+  // 最初のRESTスタートで、TOTALも自動で一生動き出す
+  if (!isTotalTimerRunning) {
+    isTotalTimerRunning = true;
+    totalStartTime = Date.now() - (totalSeconds * 1000);
+    totalTimerInterval = setInterval(() => {
+      totalSeconds = Math.floor((Date.now() - totalStartTime) / 1000);
+      document.getElementById("floating-total-time").innerText = formatTime(totalSeconds);
+    }, 1000);
+  }
+  
+  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+  
+  updateTimerDisplays();
+  
+  restTimerInterval = setInterval(() => {
+    let remaining = Math.ceil((restEndTime - Date.now()) / 1000);
+    if (remaining > 0) {
+      restRemainingSeconds = remaining;
+      updateTimerDisplays();
+    } else {
+      // 0になった時
+      clearInterval(restTimerInterval);
+      isResting = false;
+      restRemainingSeconds = 0;
+      updateTimerDisplays();
+      
+      // バイブレーションを5回繰り返す
+      if (navigator.vibrate) navigator.vibrate([500, 500, 500, 500, 500, 500, 500, 500, 500]); 
+      
+      if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
+      
+      // 1秒後に自動でプリセット秒数に戻す
+      setTimeout(() => { resetRestTimer(); }, 1000);
+    }
+  }, 200);
+}
+
+// ボトムシートの開閉
+function openTimerSheet() {
+  document.getElementById('timer-bottom-sheet').classList.add('open');
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('nav-timer').classList.add('active');
+}
+function closeTimerSheet() {
+  document.getElementById('timer-bottom-sheet').classList.remove('open');
+  // アクティブなタブの色を元に戻す
+  const currentView = getCurrentVisibleView();
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  if (currentView === 'home' || currentView === 'calendar') document.getElementById('nav-home').classList.add('active');
+  if (currentView === 'dashboard' || currentView === 'detail') document.getElementById('nav-log').classList.add('active');
+  if (currentView === 'graph') document.getElementById('nav-graph').classList.add('active');
+}
+
+// 要素をドラッグできるようにする関数
+function makeDraggable(element) {
+  if(!element) return;
+  let startX = 0, startY = 0, initialX = 0, initialY = 0;
+  
+  element.addEventListener('touchstart', dragStart, {passive: false});
+  element.addEventListener('touchmove', drag, {passive: false});
+
+  function dragStart(e) {
+    // ボタンのタップ時はドラッグを発動させない
+    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button')) return; 
+    
+    initialX = element.getBoundingClientRect().left;
+    initialY = element.getBoundingClientRect().top;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }
+  function drag(e) {
+    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button')) return;
+    e.preventDefault(); // 画面スクロールを防止
+    
+    let dx = e.touches[0].clientX - startX;
+    let dy = e.touches[0].clientY - startY;
+    let newLeft = initialX + dx;
+    let newTop = initialY + dy;
+    
+    // 画面外に消えないように制限
+    newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - element.offsetWidth));
+    newTop = Math.max(0, Math.min(newTop, window.innerHeight - element.offsetHeight));
+    
+    element.style.left = newLeft + 'px';
+    element.style.top = newTop + 'px';
+    element.style.bottom = 'auto'; 
+    element.style.right = 'auto';
+  }
+}
+
+/* ======================================================================
+   以下、既存のデータ取得・UI管理用ロジック
+====================================================================== */
 
 function initApp(data) {
   document.getElementById("loading").style.display = "none";
@@ -98,7 +297,7 @@ function initBrowserHistoryGuard() {
 
 function pushAppHistory(stateObj) {
   try { 
-    stateObj.timestamp = Date.now(); // ★画面の状態と一緒に今の時間を記録する
+    stateObj.timestamp = Date.now();
     localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(stateObj)); 
     window.history.pushState(stateObj, ''); 
   } catch (e) {}
@@ -136,13 +335,7 @@ function restoreLastViewState() {
     const raw = localStorage.getItem(STORAGE_VIEW_KEY);
     if (!raw) { openHomeView(); return; }
     const saved = JSON.parse(raw);
-
-    // ★タスクキル後の起動時：1時間以上経過していたらホームに戻す
-    if (saved.timestamp && (Date.now() - saved.timestamp > 3600000)) {
-      openHomeView();
-      return;
-    }
-
+    if (saved.timestamp && (Date.now() - saved.timestamp > 3600000)) { openHomeView(); return; }
     if (saved && saved.view && saved.view !== 'home') { applyStateFromHistory(saved); return; }
   } catch (e) {}
   openHomeView();
@@ -157,6 +350,7 @@ function hideAllViews() {
   document.getElementById("nav-home").classList.remove("active");
   document.getElementById("nav-log").classList.remove("active");
   document.getElementById("nav-graph").classList.remove("active");
+  document.getElementById("nav-timer").classList.remove("active");
 }
 
 function openHomeView(skipHistory) {
@@ -663,43 +857,6 @@ document.addEventListener("DOMContentLoaded", function() {
     if (Math.abs(e.changedTouches[0].clientX - dashStartX) > 45 && Math.abs(e.changedTouches[0].clientX - dashStartX) > Math.abs(e.changedTouches[0].clientY - dashStartY) * 1.3) navigateBack();
   }, { passive: true });
 });
-
-let totalTimerInterval = null, totalStartTime = 0, totalSeconds = 0, isTotalTimerRunning = false;
-let restTimerInterval = null, restEndTime = 0, defaultRestSeconds = 80, currentRestSeconds = 80, isResting = false, wakeLock = null;
-
-function formatTime(seconds) { if (seconds < 0) seconds = 0; return `${Math.floor(seconds / 60).toString().padStart(2, '0')}:${(Math.floor(seconds) % 60).toString().padStart(2, '0')}`; }
-function startTotalTimer() { if (isTotalTimerRunning) return; isTotalTimerRunning = true; totalStartTime = Date.now() - (totalSeconds * 1000); totalTimerInterval = setInterval(() => { totalSeconds = Math.floor((Date.now() - totalStartTime) / 1000); document.getElementById("total-time-display").innerText = formatTime(totalSeconds); }, 1000); }
-function adjustRestTime(amount) { if (isResting) return; defaultRestSeconds += amount; if (defaultRestSeconds < 10) defaultRestSeconds = 10; currentRestSeconds = defaultRestSeconds; document.getElementById("rest-time-display").innerText = formatTime(currentRestSeconds); }
-
-async function toggleRestTimer() {
-  const btn = document.getElementById("rest-toggle-btn"); const bar = document.getElementById("workout-timer-bar");
-  if (!isTotalTimerRunning) startTotalTimer();
-  if (isResting) {
-    clearInterval(restTimerInterval); isResting = false; btn.innerText = "START"; btn.style.backgroundColor = "var(--danger)";
-    currentRestSeconds = defaultRestSeconds; document.getElementById("rest-time-display").innerText = formatTime(currentRestSeconds);
-    bar.classList.remove("timer-active");
-    if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
-  } else {
-    isResting = true; btn.innerText = "STOP"; btn.style.backgroundColor = "var(--text-secondary)";
-    restEndTime = Date.now() + (currentRestSeconds * 1000);
-    bar.classList.add("timer-active");
-    
-    try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch (err) { console.log("Wake Lockエラー:", err); }
-    restTimerInterval = setInterval(() => {
-      let remaining = Math.ceil((restEndTime - Date.now()) / 1000);
-      if (remaining > 0) { currentRestSeconds = remaining; document.getElementById("rest-time-display").innerText = formatTime(currentRestSeconds); } 
-      else {
-        clearInterval(restTimerInterval); isResting = false;
-        if (navigator.vibrate) navigator.vibrate([1000, 500, 1000, 500, 1000]); 
-        let flashCount = 0; let originalBg = bar.style.backgroundColor;
-        let flashInterval = setInterval(() => { bar.style.backgroundColor = (flashCount % 2 === 0) ? "var(--danger)" : originalBg; flashCount++; if (flashCount > 10) { clearInterval(flashInterval); bar.style.backgroundColor = originalBg; } }, 500);
-        btn.innerText = "START"; btn.style.backgroundColor = "var(--danger)"; currentRestSeconds = defaultRestSeconds; document.getElementById("rest-time-display").innerText = formatTime(currentRestSeconds);
-        bar.classList.remove("timer-active");
-        if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
-      }
-    }, 200); 
-  }
-}
 
 function switchTab(tabName) {
   hideAllViews();
