@@ -512,9 +512,9 @@
     </div>
   </div>
 
- <!-- ★JavaScript -->
+  <!-- ★JavaScript -->
   <script>
-    // ★追加: Service Worker の登録（オフライン対応）
+    // ★Service Worker の登録（オフライン対応）
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
@@ -523,7 +523,7 @@
       });
     }
 
-    const GAS_URL = 'https://script.google.com/macros/s/AKfycby8s7qVhXlnN7PQ6MINDee7tmn-r13YvX79X3m2_ww_B6S6niKldLqeANFROtb9VL7A/exec';
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbwTreNAF4AVwdAFRIdeVIqR4dYn87RgbSP0-u-0n3_90oCl_7ZlBlwADXWUvCsv4kELrg/exec';
     const API_TOKEN = "MyGymAppSecretToken_2026";
 
     let globalTrainingHistory = [];
@@ -545,10 +545,16 @@
       initBrowserHistoryGuard();
       initDetailSwipe();
 
-      // ★変更: 初期取得時に件数制限とトークンを付与
+      // ★GASからデータを取得（エラー時は画面に表示）
       fetch(GAS_URL + '?action=getInitialData&limit=45&offset=0&token=' + API_TOKEN)
         .then(response => response.json())
-        .then(data => initApp(data))
+        .then(data => {
+          if(data.error) {
+            showError(new Error(data.error));
+          } else {
+            initApp(data);
+          }
+        })
         .catch(error => showError(error));
 
       document.addEventListener("click", function(e) {
@@ -703,7 +709,6 @@
         renderVitalsToDOM(null, prefix);
         const paddedDate = formatWithZeroPad(normalized);
         
-        // ★変更: 日付指定取得時にもトークンを付与
         fetch(GAS_URL + '?action=getDataForDate&date=' + paddedDate + '&token=' + API_TOKEN)
           .then(response => response.json())
           .then(data => {
@@ -1074,7 +1079,6 @@
       const btn = document.getElementById("save-btn"); btn.disabled = true; msg.innerText = "";
       showSavingOverlay();
 
-      // ★変更: POST送信時にトークンを含める
       fetch(GAS_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
