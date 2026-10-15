@@ -1,13 +1,12 @@
+// ★Service Worker の登録（オフライン対応）
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(()=>{}); });
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(err => console.error(err));
+  });
 }
 
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwTreNAF4AVwdAFRIdeVIqR4dYn87RgbSP0-u-0n3_90oCl_7ZlBlwADXWUvCsv4kELrg/exec';
 const API_TOKEN = "MyGymAppSecretToken_2026";
-const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
-const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
 
 let globalTrainingHistory = [];
 let globalHealthMap = {};
@@ -18,8 +17,303 @@ let previousViewBeforeDetail = 'home';
 let currentRecordingDateStr = "";
 let currentDetailDateKey = "";
 
+const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
+const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
+const DATA_CACHE_KEY = "workout_app_data_cache_v1"; // ★追加：ゼロ秒起動のためのローカルキャッシュ
+const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1"; // ★追加：オフライン保存用キュー
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
+
+document.addEventListener("DOMContentLoaded", function() {
+  initBrowserHistoryGuard();
+  initDetailSwipe();
+  initTimerSheetSwipe();
+
+  makeDraggable(document.getElementById('floating-total'));
+  makeDraggable(document.getElementById('floating-rest'));
+  updateTimerDisplays();
+
+  // ★1. フリーズ回避：前回取得したデータがあれば、とりあえずそれを使って「ゼロ秒」で画面を立ち上げる
+  const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
+  if (cachedRaw) {
+    try { initApp(JSON.parse(cachedRaw)); } catch(e) {}
+  }
+
+  // ★2. 裏側でGASから最新データを取得しにいく
+  fetch(GAS_URL + '?action=getInitialData&limit=45&offset=0&token=' + API_TOKEN)
+    .then(response => response.json())
+    .then(data => {
+      if(data.error) {
+        if (!cachedRaw) showError(new Error(data.error)); // キャッシュもない完全初回だけエラー表示
+      } else {
+        localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data)); // 最新データをキャッシュに上書き保存
+        initApp(data); // 画面を最新状態に書き換える
+      }
+    })
+    .catch(error => {
+      if (!cachedRaw) showError(error); // 圏外かつ完全初回起動の時だけエラー表示
+    });
+
+  document.addEventListener("click", function(e) {
+    if (!e.target.classList.contains("exercise")) {
+      document.querySelectorAll(".suggest-box").forEach(box => box.style.display = "none");
+    }
+  });
+
+  // ★3. 起動時にオフラインで溜まっていた記録があればGASへ自動送信する
+  syncOfflineQueue();
+});
+
+// 電波が復活した瞬間に自動送信を発動
+window.addEventListener('online', syncOfflineQueue);
+
+// オフラインデータの自動同期関数
+async function syncOfflineQueue() {
+  if (!navigator.onLine) return; 
+  const queueRaw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+  if (!queueRaw) return;
+  
+  let queue = [];
+  try { queue = JSON.parse(queueRaw); } catch(e) { return; }
+  if (queue.length === 0) return;
+
+  if (window.isSyncing) return;
+  window.isSyncing = true;
+  let remainingQueue = [...queue];
+
+  for (let i = 0; i < queue.length; i++) {
+    const item = queue[i];
+    try {
+      const response = await fetch(GAS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(item.payload)
+      });
+      const result = await response.json();
+      if (result.success) {
+        if (result.updatedHistory) {
+          globalTrainingHistory = result.updatedHistory;
+          // ローカルキャッシュも最新化
+          const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
+          if (cachedRaw) {
+             let cData = JSON.parse(cachedRaw);
+             cData.trainingHistory = result.updatedHistory;
+             localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cData));
+          }
+        }
+        remainingQueue = remainingQueue.filter(q => q.id !== item.id);
+      }
+    } catch (e) { break; } // 途中で電波が途切れたら終了
+  }
+
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remainingQueue));
+  window.isSyncing = false;
+
+  // もしデータが送信されて減っていれば、画面を再描画する
+  if (queue.length !== remainingQueue.length) {
+    initApp(null); 
+  }
+}
+
+document.addEventListener("visibilitychange", function() {
+  if (document.visibilityState === 'visible') {
+    try {
+      const raw = localStorage.getItem(STORAGE_VIEW_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved.timestamp && (Date.now() - saved.timestamp > 3600000)) { openHomeView(); }
+      }
+    } catch(e){}
+    syncOfflineQueue(); // アプリに戻ってきた時にも同期を試みる
+  } else {
+    try {
+      const raw = localStorage.getItem(STORAGE_VIEW_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        saved.timestamp = Date.now();
+        localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(saved));
+      }
+    } catch(e){}
+  }
+});
+
 /* ======================================================================
-   ★大改修：Alpine.jsによるフォーム ＆ 履歴ポップアップ管理
+   新タイマーシステム（TOTAL & REST）
+====================================================================== */
+let currentPresetSeconds = 180;
+let restRemainingSeconds = 180;
+let isResting = false;
+let restTimerInterval = null;
+let restEndTime = 0;
+
+let totalTimerInterval = null;
+let totalStartTime = 0;
+let totalSeconds = 0;
+let isTotalTimerRunning = false;
+let wakeLock = null;
+
+function formatTime(seconds) {
+  if (seconds < 0) seconds = 0;
+  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const s = (Math.floor(seconds) % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function updateTimerDisplays() {
+  const timeStr = formatTime(restRemainingSeconds);
+  document.getElementById('floating-rest-time').innerText = timeStr;
+  document.getElementById('sheet-rest-time').innerText = timeStr;
+  
+  const playBtnSheet = document.getElementById('sheet-play-btn');
+  const playBtnFloat = document.getElementById('floating-rest-play');
+  const circleIphone = document.querySelector('.timer-circle-iphone');
+  
+  if (isResting) {
+    playBtnSheet.innerText = "一時停止";
+    playBtnSheet.className = "sheet-circle-btn stop";
+    playBtnFloat.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;
+    circleIphone.className = "timer-circle-iphone running";
+  } else {
+    playBtnSheet.innerText = "開始";
+    playBtnSheet.className = "sheet-circle-btn play";
+    playBtnFloat.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
+    circleIphone.className = "timer-circle-iphone stopped";
+  }
+}
+
+function selectPreset(seconds, btn) {
+  pauseRestTimer();
+  currentPresetSeconds = seconds;
+  restRemainingSeconds = seconds;
+  document.querySelectorAll('.preset-btn').forEach(el => el.classList.remove('active'));
+  btn.classList.add('active');
+  updateTimerDisplays();
+}
+
+function adjustRestTime(amount) {
+  restRemainingSeconds += amount;
+  if (restRemainingSeconds < 0) restRemainingSeconds = 0;
+  if (isResting) { restEndTime += amount * 1000; }
+  updateTimerDisplays();
+}
+
+function resetRestTimer() {
+  pauseRestTimer();
+  restRemainingSeconds = currentPresetSeconds;
+  updateTimerDisplays();
+}
+
+function toggleRestTimer() {
+  if (isResting) { pauseRestTimer(); } else { startRestTimer(); }
+}
+
+function pauseRestTimer() {
+  isResting = false;
+  clearInterval(restTimerInterval);
+  if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
+  updateTimerDisplays();
+}
+
+async function startRestTimer() {
+  if (restRemainingSeconds <= 0) return; 
+  isResting = true;
+  restEndTime = Date.now() + (restRemainingSeconds * 1000);
+  
+  if (!isTotalTimerRunning) {
+    isTotalTimerRunning = true;
+    totalStartTime = Date.now() - (totalSeconds * 1000);
+    totalTimerInterval = setInterval(() => {
+      totalSeconds = Math.floor((Date.now() - totalStartTime) / 1000);
+      document.getElementById("floating-total-time").innerText = formatTime(totalSeconds);
+    }, 1000);
+  }
+  
+  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+  updateTimerDisplays();
+  
+  restTimerInterval = setInterval(() => {
+    let remaining = Math.ceil((restEndTime - Date.now()) / 1000);
+    if (remaining > 0) {
+      restRemainingSeconds = remaining;
+      updateTimerDisplays();
+    } else {
+      clearInterval(restTimerInterval);
+      isResting = false;
+      restRemainingSeconds = 0;
+      updateTimerDisplays();
+      if (navigator.vibrate) navigator.vibrate([500, 500, 500, 500, 500, 500, 500, 500, 500]); 
+      if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
+      setTimeout(() => { resetRestTimer(); }, 1000);
+    }
+  }, 200);
+}
+
+function openTimerSheet() {
+  document.getElementById('timer-bottom-sheet').classList.add('open');
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  document.getElementById('nav-timer').classList.add('active');
+}
+
+function closeTimerSheet() {
+  document.getElementById('timer-bottom-sheet').classList.remove('open');
+  const currentView = getCurrentVisibleView();
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  if (currentView === 'home' || currentView === 'calendar') document.getElementById('nav-home').classList.add('active');
+  if (currentView === 'dashboard' || currentView === 'detail') document.getElementById('nav-log').classList.add('active');
+  if (currentView === 'graph') document.getElementById('nav-graph').classList.add('active');
+}
+
+function initTimerSheetSwipe() {
+  const sheet = document.getElementById('timer-bottom-sheet');
+  if (!sheet) return;
+  let startY = 0;
+
+  sheet.addEventListener('touchstart', (e) => {
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  sheet.addEventListener('touchmove', (e) => {
+    const y = e.touches[0].clientY;
+    if (y > startY) { e.preventDefault(); }
+  }, { passive: false });
+
+  sheet.addEventListener('touchend', (e) => {
+    const y = e.changedTouches[0].clientY;
+    if (y - startY > 60) { closeTimerSheet(); }
+  }, { passive: true });
+}
+
+function makeDraggable(element) {
+  if(!element) return;
+  let startX = 0, startY = 0, initialX = 0, initialY = 0;
+  element.addEventListener('touchstart', dragStart, {passive: false});
+  element.addEventListener('touchmove', drag, {passive: false});
+
+  function dragStart(e) {
+    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button') || e.target.tagName.toLowerCase() === 'svg') return; 
+    initialX = element.getBoundingClientRect().left;
+    initialY = element.getBoundingClientRect().top;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }
+  function drag(e) {
+    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button') || e.target.tagName.toLowerCase() === 'svg') return;
+    e.preventDefault(); 
+    let dx = e.touches[0].clientX - startX;
+    let dy = e.touches[0].clientY - startY;
+    let newLeft = initialX + dx;
+    let newTop = initialY + dy;
+    newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - element.offsetWidth));
+    newTop = Math.max(0, Math.min(newTop, window.innerHeight - element.offsetHeight));
+    element.style.left = newLeft + 'px';
+    element.style.top = newTop + 'px';
+    element.style.bottom = 'auto'; 
+    element.style.right = 'auto';
+  }
+}
+
+/* ======================================================================
+   Alpine.jsによるフォーム ＆ 履歴ポップアップ管理
 ====================================================================== */
 document.addEventListener('alpine:init', () => {
   Alpine.data('workoutForm', () => ({
@@ -33,34 +327,21 @@ document.addEventListener('alpine:init', () => {
 
     historyModal: { isOpen: false, exercise: '', records: [] },
 
-    init() {
-      // 外部のVanilla関数からAlpineのデータを叩けるように紐付け
-      window.alpineWorkoutForm = this;
-    },
+    init() { window.alpineWorkoutForm = this; },
 
-    // 1. 種目の追加・削除
     addExercise(existingData = null) {
       const emptySets = Array.from({ length: 5 }, () => ({ w: '', r: '' }));
-      if (existingData) {
-        this.formExercises.push({ name: existingData.name, memo: existingData.memo, sets: existingData.sets, suggests: [] });
-      } else {
-        this.formExercises.push({ name: '', memo: '', sets: emptySets, suggests: [] });
-      }
+      if (existingData) { this.formExercises.push({ name: existingData.name, memo: existingData.memo, sets: existingData.sets, suggests: [] }); } 
+      else { this.formExercises.push({ name: '', memo: '', sets: emptySets, suggests: [] }); }
       this.saveDraft();
     },
-    removeExercise(idx) {
-      this.formExercises.splice(idx, 1);
-      this.saveDraft();
-    },
+    removeExercise(idx) { this.formExercises.splice(idx, 1); this.saveDraft(); },
 
-    // 2. 種目のサジェスト機能
     suggest(idx) {
       const val = this.formExercises[idx].name.trim().toLowerCase();
       if (!val) { this.formExercises[idx].suggests = []; return; }
-      
       const currentPart = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart;
       const exMap = new Map();
-      
       globalTrainingHistory.forEach(r => {
         const ex = (r.exercise || "").trim();
         if (!ex || ex === "種目不明") return;
@@ -68,74 +349,44 @@ document.addEventListener('alpine:init', () => {
           if (!exMap.has(ex) || r.part === currentPart) exMap.set(ex, r.part || "");
         }
       });
-      
       this.formExercises[idx].suggests = Array.from(exMap.entries())
         .sort((a, b) => (currentPart && a[1] === currentPart ? -1 : 1) - (currentPart && b[1] === currentPart ? -1 : 1))
-        .slice(0, 5)
-        .map(([name, part]) => ({ name, part }));
+        .slice(0, 5).map(([name, part]) => ({ name, part }));
     },
-    selectSuggest(idx, name) {
-      this.formExercises[idx].name = name;
-      this.formExercises[idx].suggests = [];
-      this.saveDraft();
-    },
+    selectSuggest(idx, name) { this.formExercises[idx].name = name; this.formExercises[idx].suggests = []; this.saveDraft(); },
 
-    // 3. 過去の履歴ポップアップ機能
     openHistory(exName) {
-      const name = exName.trim();
-      if (!name) return;
+      const name = exName.trim(); if (!name) return;
       this.historyModal.exercise = name;
-      
-      // 新しい日付順にソートして抽出
       const records = globalTrainingHistory
         .filter(r => (r.exercise || "").trim() === name)
         .sort((a, b) => new Date(normalizeDateStr(b.date)) - new Date(normalizeDateStr(a.date)))
         .map(r => {
           const dObj = parseDateKeyToObj(r.date);
-          return {
-            dateStr: `${dObj.getFullYear()}/${dObj.getMonth()+1}/${dObj.getDate()}(${DAY_LABELS_SHORT[dObj.getDay()]})`,
-            details: r.details,
-            memo: r.memo
-          };
+          return { dateStr: `${dObj.getFullYear()}/${dObj.getMonth()+1}/${dObj.getDate()}(${DAY_LABELS_SHORT[dObj.getDay()]})`, details: r.details, memo: r.memo };
         });
-      
-      this.historyModal.records = records;
-      this.historyModal.isOpen = true;
+      this.historyModal.records = records; this.historyModal.isOpen = true;
     },
 
-    // 4. 下書き保存・復元
     saveDraft() {
       if (!currentRecordingDateStr) return;
-      localStorage.setItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(currentRecordingDateStr), JSON.stringify({
-        part: this.formPart, partCustom: this.formPartCustom, exercises: this.formExercises
-      }));
+      localStorage.setItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(currentRecordingDateStr), JSON.stringify({ part: this.formPart, partCustom: this.formPartCustom, exercises: this.formExercises }));
       this.hasDraft = true;
     },
+    
     loadDraftAndRecords(dateStr) {
-      this.formPart = ''; this.formPartCustom = ''; this.formExercises = []; this.hasDraft = false;
-      this.saveMsg = '';
-
+      this.formPart = ''; this.formPartCustom = ''; this.formExercises = []; this.hasDraft = false; this.saveMsg = '';
       const draftRaw = localStorage.getItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(dateStr));
       if (draftRaw) {
         const draft = JSON.parse(draftRaw);
         this.formPart = draft.part || ''; this.formPartCustom = draft.partCustom || '';
-        if (draft.exercises && draft.exercises.length > 0) {
-          draft.exercises.forEach(e => this.addExercise(e));
-        } else { this.addExercise(); }
-        this.hasDraft = true;
-        return;
+        if (draft.exercises && draft.exercises.length > 0) { draft.exercises.forEach(e => this.addExercise(e)); } else { this.addExercise(); }
+        this.hasDraft = true; return;
       }
-
-      // 既存の記録の読み込み
       const records = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === normalizeDateStr(dateStr));
-      if (records.length === 0) {
-        this.addExercise();
-      } else {
-        let pt = records[0].part || '';
-        if (pt === "足") pt = "脚";
-        if (["胸", "背中", "腕", "肩", "脚"].includes(pt)) { this.formPart = pt; } 
-        else { this.formPart = 'custom'; this.formPartCustom = pt; }
-
+      if (records.length === 0) { this.addExercise(); } else {
+        let pt = records[0].part || ''; if (pt === "足") pt = "脚";
+        if (["胸", "背中", "腕", "肩", "脚"].includes(pt)) { this.formPart = pt; } else { this.formPart = 'custom'; this.formPartCustom = pt; }
         records.forEach(r => {
           const sets = Array.from({ length: 5 }, () => ({ w: '', r: '' }));
           const parsed = parseDetailsToSets(r.details);
@@ -145,7 +396,7 @@ document.addEventListener('alpine:init', () => {
       }
     },
 
-    // 5. GASへの保存処理（超軽量化）
+    // ★保存処理（オフライン対応版）
     saveTraining() {
       const targetDate = currentRecordingDateStr || formatWithZeroPad(formatDateKey(new Date()));
       const globalPart = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart;
@@ -156,39 +407,72 @@ document.addEventListener('alpine:init', () => {
       this.formExercises.forEach(ex => {
         const name = ex.name.trim(); const memo = ex.memo.trim();
         let setsText = ""; let hasSets = false;
-        
         ex.sets.forEach((s, i) => {
           const w = String(s.w).trim(); const r = String(s.r).trim();
           if (w || r) { setsText += `${i+1}セット目: ${w ? w+'kg' : '-'} × ${r ? r+'回' : '-'}\n`; hasSets = true; }
         });
-        
         setsText = setsText.trim();
-        if (name || hasSets || memo) {
-          trainingData.push({ date: targetDate, part: globalPart, exercise: name || "種目不明", details: setsText, memo: memo });
-        }
+        if (name || hasSets || memo) { trainingData.push({ date: targetDate, part: globalPart, exercise: name || "種目不明", details: setsText, memo: memo }); }
       });
 
       if (trainingData.length === 0) { this.saveMsg = "内容を入力してください"; this.saveMsgColor = "#FF453A"; return; }
 
       this.isSaving = true; this.saveMsg = ""; showSavingOverlay();
 
+      const payload = { action: 'saveTrainingLog', targetDate: targetDate, trainingData: trainingData, token: API_TOKEN };
+
+      const finishAndClear = (updatedHistory) => {
+        if (updatedHistory) globalTrainingHistory = updatedHistory;
+        localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(targetDate));
+        this.hasDraft = false;
+        finishSavingOverlay(() => { openHomeView(); });
+      };
+
+      // オフライン・エラー時の一時保存ロジック
+      const saveToOfflineQueue = () => {
+        const queueRaw = localStorage.getItem(OFFLINE_QUEUE_KEY);
+        let queue = queueRaw ? JSON.parse(queueRaw) : [];
+        queue.push({ id: Date.now(), payload: payload });
+        localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
+        
+        // ローカルでの表示を即座に更新する
+        globalTrainingHistory = globalTrainingHistory.filter(r => normalizeDateStr(r.date) !== normalizeDateStr(targetDate));
+        trainingData.forEach(d => globalTrainingHistory.push(d));
+
+        const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
+        if (cachedRaw) {
+           let cData = JSON.parse(cachedRaw);
+           cData.trainingHistory = globalTrainingHistory;
+           localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cData));
+        }
+
+        document.getElementById("saving-text").innerText = "オフライン保存しました";
+        setTimeout(() => {
+          this.isSaving = false;
+          finishAndClear(null);
+        }, 1200);
+      };
+
+      // 完全にオフラインなら即座に一時保存
+      if (!navigator.onLine) {
+        saveToOfflineQueue();
+        return;
+      }
+
       fetch(GAS_URL, {
         method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'saveTrainingLog', targetDate: targetDate, trainingData: trainingData, token: API_TOKEN })
+        body: JSON.stringify(payload)
       })
       .then(res => res.json())
       .then(result => {
         this.isSaving = false;
-        if (result.success) {
-          if (result.updatedHistory) globalTrainingHistory = result.updatedHistory;
-          localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(targetDate));
-          this.hasDraft = false;
-          finishSavingOverlay(() => { openHomeView(); });
-        } else {
-          hideSavingOverlayImmediate(); this.saveMsg = "エラー: " + result.error; this.saveMsgColor = "#FF453A";
-        }
+        if (result.success) { finishAndClear(result.updatedHistory); } 
+        else { hideSavingOverlayImmediate(); this.saveMsg = "エラー: " + result.error; this.saveMsgColor = "#FF453A"; }
       })
-      .catch(err => { this.isSaving = false; hideSavingOverlayImmediate(); this.saveMsg = "通信エラー"; this.saveMsgColor = "#FF453A"; });
+      .catch(err => { 
+        // 途中で電波が途切れた場合もオフラインキューに逃がす
+        saveToOfflineQueue();
+      });
     },
 
     adjustTextarea(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
@@ -196,58 +480,34 @@ document.addEventListener('alpine:init', () => {
 });
 
 /* ======================================================================
-   初期化 ＆ 既存のUI制御系（カレンダー・グラフなど）
+   既存のデータ取得・UI管理用ロジック
 ====================================================================== */
-document.addEventListener("DOMContentLoaded", function() {
-  initBrowserHistoryGuard();
-  initDetailSwipe();
-  initTimerSheetSwipe();
-
-  makeDraggable(document.getElementById('floating-total'));
-  makeDraggable(document.getElementById('floating-rest'));
-  updateTimerDisplays();
-
-  fetch(GAS_URL + '?action=getInitialData&limit=45&offset=0&token=' + API_TOKEN)
-    .then(res => res.json())
-    .then(data => { if(data.error) showError(new Error(data.error)); else initApp(data); })
-    .catch(err => showError(err));
-    
-  // サジェストボックスを外タップで閉じる
-  document.addEventListener("click", e => {
-    if (!e.target.closest('.input-with-history')) {
-      if (window.alpineWorkoutForm) window.alpineWorkoutForm.formExercises.forEach(ex => ex.suggests = []);
-    }
-  });
-});
-
-document.addEventListener("visibilitychange", function() {
-  if (document.visibilityState === 'visible') {
-    try {
-      const raw = localStorage.getItem(STORAGE_VIEW_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw);
-        if (saved.timestamp && (Date.now() - saved.timestamp > 3600000)) openHomeView();
-      }
-    } catch(e){}
-  } else {
-    try {
-      const raw = localStorage.getItem(STORAGE_VIEW_KEY);
-      if (raw) { const saved = JSON.parse(raw); saved.timestamp = Date.now(); localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(saved)); }
-    } catch(e){}
-  }
-});
-
 function initApp(data) {
+  // ★強制非表示処理：どんな状態でも一度読み込み中文字を消す
   document.getElementById("loading").style.display = "none";
+  
   if (data) {
     globalTrainingHistory = data.trainingHistory || [];
+    globalHealthMap = {};
     if (data.healthHistory && data.healthHistory.length > 0) {
       data.healthHistory.forEach(item => { if (item && item.date) globalHealthMap[normalizeDateStr(item.date)] = item; });
     } else if (data.currentData && data.currentData.date) {
       globalHealthMap[normalizeDateStr(data.currentData.date)] = data.currentData;
     }
   }
-  renderHomeCalendar(); renderDetailCalendar(); renderWeeklySummary(); restoreLastViewState();
+  
+  // ★更新時：今開いている画面だけを静かに再描画する
+  if (!window.isAppInitialized) {
+    window.isAppInitialized = true;
+    restoreLastViewState();
+  } else {
+    const currentView = getCurrentVisibleView();
+    if (currentView === 'home') { renderHomeCalendar(); renderWeeklySummary(); }
+    else if (currentView === 'calendar') { renderDetailCalendar(); }
+    else if (currentView === 'dashboard') { if (window.alpineWorkoutForm) window.alpineWorkoutForm.loadDraftAndRecords(currentRecordingDateStr); }
+    else if (currentView === 'detail') { openDayDetailView(currentDetailDateKey, document.getElementById("day-detail-title").innerText, null, null, true); }
+    else if (currentView === 'graph') { initGraphView(); }
+  }
 }
 
 function initBrowserHistoryGuard() {
@@ -298,7 +558,9 @@ function restoreLastViewState() {
   openHomeView();
 }
 
+// ★メニュー押下時の強制ローディング非表示を追加
 function hideAllViews() {
+  document.getElementById("loading").style.display = "none";
   ['view-home','view-calendar','view-day-detail','view-dashboard','view-graph'].forEach(id => document.getElementById(id).style.display = "none");
   ['nav-home','nav-log','nav-graph','nav-timer'].forEach(id => document.getElementById(id).classList.remove("active"));
 }
@@ -328,8 +590,6 @@ function openDashboardForDate(targetDateKey, skipHistory) {
   document.getElementById("form-vitals-caption").innerText = `前日 ${prevDateObj.getMonth() + 1}/${prevDateObj.getDate()} (${DAY_LABELS_SHORT[prevDateObj.getDay()]}) のコンディション`;
 
   loadHealthDataIntoPrefix(formatDateKey(prevDateObj), "");
-  
-  // ★Alpine側にデータを流し込む
   if (window.alpineWorkoutForm) window.alpineWorkoutForm.loadDraftAndRecords(currentRecordingDateStr);
 
   if (!skipHistory) pushAppHistory({ view: 'dashboard', dateKey: currentRecordingDateStr });
@@ -494,9 +754,6 @@ function switchTab(t) {
   window.scrollTo(0, 0);
 }
 
-/* ======================================================================
-   タイマー・グラフ系
-====================================================================== */
 let rmChartInstance = null; let volumeChartInstance = null;
 function initGraphView() {
   const sel = document.getElementById("graph-exercise-select"); const cV = sel.value;
@@ -536,68 +793,4 @@ function drawChart(cId, lbl, lbls, d, c) {
   if (cId === 'rmChart' && rmChartInstance) rmChartInstance.destroy(); if (cId === 'volumeChart' && volumeChartInstance) volumeChartInstance.destroy();
   const cfg = { type: 'line', data: { labels: lbls, datasets: [{ label: lbl, data: d, borderColor: c, backgroundColor: c+'33', borderWidth: 2, pointBackgroundColor: c, pointRadius: 4, fill: true, tension: 0.3 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1C1C1E', titleFont: { size: 13, family: 'Inter' }, bodyFont: { size: 14, weight: 'bold', family: 'Oswald' }, padding: 10, displayColors: false } }, scales: { x: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8E8E93', font: { family: 'Inter' } } }, y: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8E8E93', font: { family: 'Oswald' } } } } } };
   if (cId === 'rmChart') rmChartInstance = new Chart(ctx, cfg); else volumeChartInstance = new Chart(ctx, cfg);
-}
-
-// タイマーシートのスワイプ ＆ ドラッグ
-function initTimerSheetSwipe() {
-  const sh = document.getElementById('timer-bottom-sheet'); if (!sh) return;
-  let sY = 0;
-  sh.addEventListener('touchstart', e => { sY = e.touches[0].clientY; }, { passive: true });
-  sh.addEventListener('touchmove', e => { if (e.touches[0].clientY > sY) e.preventDefault(); }, { passive: false });
-  sh.addEventListener('touchend', e => { if (e.changedTouches[0].clientY - sY > 60) closeTimerSheet(); }, { passive: true });
-}
-function makeDraggable(el) {
-  if(!el) return;
-  let sX=0, sY=0, iX=0, iY=0;
-  el.addEventListener('touchstart', e => {
-    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button') || e.target.tagName.toLowerCase() === 'svg') return;
-    iX = el.getBoundingClientRect().left; iY = el.getBoundingClientRect().top;
-    sX = e.touches[0].clientX; sY = e.touches[0].clientY;
-  }, {passive: false});
-  el.addEventListener('touchmove', e => {
-    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button') || e.target.tagName.toLowerCase() === 'svg') return;
-    e.preventDefault(); 
-    let nL = Math.max(0, Math.min(iX + (e.touches[0].clientX - sX), window.innerWidth - el.offsetWidth));
-    let nT = Math.max(0, Math.min(iY + (e.touches[0].clientY - sY), window.innerHeight - el.offsetHeight));
-    el.style.left = nL + 'px'; el.style.top = nT + 'px'; el.style.bottom = 'auto'; el.style.right = 'auto';
-  }, {passive: false});
-}
-
-function updateTimerDisplays() {
-  const tStr = formatTime(restRemainingSeconds);
-  document.getElementById('floating-rest-time').innerText = tStr; document.getElementById('sheet-rest-time').innerText = tStr;
-  const pbS = document.getElementById('sheet-play-btn'), pbF = document.getElementById('floating-rest-play'), cI = document.querySelector('.timer-circle-iphone');
-  if (isResting) { pbS.innerText = "一時停止"; pbS.className = "sheet-circle-btn stop"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`; cI.className = "timer-circle-iphone running"; }
-  else { pbS.innerText = "開始"; pbS.className = "sheet-circle-btn play"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`; cI.className = "timer-circle-iphone stopped"; }
-}
-function selectPreset(s, b) { pauseRestTimer(); currentPresetSeconds = s; restRemainingSeconds = s; document.querySelectorAll('.preset-btn').forEach(e => e.classList.remove('active')); b.classList.add('active'); updateTimerDisplays(); }
-function adjustRestTime(a) { restRemainingSeconds += a; if (restRemainingSeconds < 0) restRemainingSeconds = 0; if (isResting) restEndTime += a * 1000; updateTimerDisplays(); }
-function resetRestTimer() { pauseRestTimer(); restRemainingSeconds = currentPresetSeconds; updateTimerDisplays(); }
-function toggleRestTimer() { if (isResting) pauseRestTimer(); else startRestTimer(); }
-function pauseRestTimer() { isResting = false; clearInterval(restTimerInterval); if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null); updateTimerDisplays(); }
-async function startRestTimer() {
-  if (restRemainingSeconds <= 0) return; isResting = true; restEndTime = Date.now() + (restRemainingSeconds * 1000);
-  if (!isTotalTimerRunning) {
-    isTotalTimerRunning = true; totalStartTime = Date.now() - (totalSeconds * 1000);
-    totalTimerInterval = setInterval(() => { totalSeconds = Math.floor((Date.now() - totalStartTime) / 1000); document.getElementById("floating-total-time").innerText = formatTime(totalSeconds); }, 1000);
-  }
-  try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
-  updateTimerDisplays();
-  restTimerInterval = setInterval(() => {
-    let rem = Math.ceil((restEndTime - Date.now()) / 1000);
-    if (rem > 0) { restRemainingSeconds = rem; updateTimerDisplays(); } else {
-      clearInterval(restTimerInterval); isResting = false; restRemainingSeconds = 0; updateTimerDisplays();
-      if (navigator.vibrate) navigator.vibrate([500, 500, 500, 500, 500, 500, 500, 500, 500]); 
-      if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
-      setTimeout(() => { resetRestTimer(); }, 1000);
-    }
-  }, 200);
-}
-function openTimerSheet() { document.getElementById('timer-bottom-sheet').classList.add('open'); document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active')); document.getElementById('nav-timer').classList.add('active'); }
-function closeTimerSheet() {
-  document.getElementById('timer-bottom-sheet').classList.remove('open'); const cV = getCurrentVisibleView();
-  document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
-  if (cV === 'home' || cV === 'calendar') document.getElementById('nav-home').classList.add('active');
-  if (cV === 'dashboard' || cV === 'detail') document.getElementById('nav-log').classList.add('active');
-  if (cV === 'graph') document.getElementById('nav-graph').classList.add('active');
 }
