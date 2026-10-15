@@ -10,15 +10,12 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#000000">
 
-  <!-- ★完全アプリ化（PWA）のための必須設定 -->
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon.png">
   
   <title>ジムメモ</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
-  
-  <!-- ★追加：切り分けた外部CSSファイルの読み込み -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;400;500;600;700&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -37,14 +34,12 @@
     <!-- ==================== 1. ホーム画面 ==================== -->
     <div id="view-home" style="display: none;">
       <div class="home-layout-grid">
-        <!-- 左側：カレンダーと統計 -->
         <div class="home-left-col">
           <div class="calendar-wrapper compact-cal">
             <div class="cal-header-row"><h1 class="cal-title" id="home-cal-title"></h1></div>
             <div class="cal-weekdays"><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div><div>SUN</div></div>
             <div class="cal-grid" id="home-cal-grid"></div>
           </div>
-          
           <div class="home-stats-block">
             <div class="stat-row">
               <div class="stat-label">MONTHLY</div>
@@ -56,8 +51,6 @@
             </div>
           </div>
         </div>
-
-        <!-- 右側：This Week -->
         <div class="home-right-col">
           <div class="section-header"><span class="section-label">THIS WEEK</span></div>
           <div class="grouped-list compact-list" id="weekly-list"></div>
@@ -70,10 +63,7 @@
     <div id="view-calendar" style="display: none;">
       <div class="top-nav">
         <button class="nav-back" onclick="navigateBack()"> ホーム</button>
-        <div class="cal-nav-btns">
-          <button onclick="changeMonth(-1)"></button>
-          <button onclick="changeMonth(1)"></button>
-        </div>
+        <div class="cal-nav-btns"><button onclick="changeMonth(-1)"></button><button onclick="changeMonth(1)"></button></div>
       </div>
       <div class="calendar-wrapper">
         <div class="cal-header-row"><h1 class="cal-title" id="detail-cal-title"></h1></div>
@@ -96,10 +86,7 @@
       <div class="top-nav"><button class="nav-back" onclick="navigateBack()"> 戻る</button></div>
       <div class="detail-date-bar">
         <div class="detail-date-heading" id="day-detail-title"></div>
-        <div class="detail-day-step-btns">
-          <button type="button" onclick="shiftDetailDay(-1)" title="前日"></button>
-          <button type="button" onclick="shiftDetailDay(1)" title="翌日"></button>
-        </div>
+        <div class="detail-day-step-btns"><button type="button" onclick="shiftDetailDay(-1)"></button><button type="button" onclick="shiftDetailDay(1)"></button></div>
       </div>
       <div class="vitals-card">
         <div class="vitals-primary-row">
@@ -174,21 +161,55 @@
     </div>
   </div>
 
-  <!-- ↓↓↓ タイマー＆レスト管理バー ↓↓↓ -->
-  <div id="workout-timer-bar">
-    <div class="timer-section"><span class="timer-label">TOTAL</span><span id="total-time-display">00:00</span></div>
-    <div class="timer-divider"></div>
-    <div class="rest-section">
-      <div class="rest-controls">
-        <button type="button" class="rest-adjust-btn" onclick="adjustRestTime(-10)">-10s</button>
-        <div class="rest-display-wrap"><span class="timer-label">REST</span><span id="rest-time-display">01:20</span></div>
-        <button type="button" class="rest-adjust-btn" onclick="adjustRestTime(10)">+10s</button>
+  <!-- ↓↓↓ 1. iPhone風タイマー・ボトムシート ↓↓↓ -->
+  <div id="timer-bottom-sheet">
+    <div class="sheet-handle" onclick="closeTimerSheet()"></div>
+    <div class="sheet-title">TIMER SETTINGS</div>
+    
+    <div class="preset-pills">
+      <button class="pill-btn preset-btn active" onclick="selectPreset(180, this)">胸 3分</button>
+      <button class="pill-btn preset-btn" onclick="selectPreset(180, this)">背中 3分</button>
+      <button class="pill-btn preset-btn" onclick="selectPreset(180, this)">脚 3分</button>
+      <button class="pill-btn preset-btn" onclick="selectPreset(120, this)">腕 2分</button>
+      <button class="pill-btn preset-btn" onclick="selectPreset(90, this)">肩 1分半</button>
+    </div>
+
+    <div class="timer-circle-wrap">
+      <div class="timer-circle-iphone stopped">
+         <span id="sheet-rest-time">03:00</span>
       </div>
-      <button type="button" id="rest-toggle-btn" onclick="toggleRestTimer()">START</button>
+    </div>
+
+    <div class="timer-adjust-row">
+      <button class="adjust-btn" onclick="adjustRestTime(-10)">- 10s</button>
+      <button class="adjust-btn" onclick="adjustRestTime(10)">+ 10s</button>
+    </div>
+
+    <div class="timer-action-row">
+      <button id="sheet-reset-btn" class="sheet-circle-btn reset" onclick="resetRestTimer()">キャンセル</button>
+      <button id="sheet-play-btn" class="sheet-circle-btn play" onclick="toggleRestTimer()">開始</button>
     </div>
   </div>
 
-  <!-- ↓↓↓ ボトムメニューバー ↓↓↓ -->
+  <!-- ↓↓↓ 2. ドラッグ可能なフローティング小窓 ↓↓↓ -->
+  <div id="floating-total" class="floating-widget">
+    <div class="floating-total-label">TOTAL</div>
+    <div id="floating-total-time" class="floating-total-time">00:00</div>
+  </div>
+
+  <div id="floating-rest" class="floating-widget">
+    <div class="rest-circle">
+      <span id="floating-rest-time">03:00</span>
+    </div>
+    <button id="floating-rest-play" class="float-btn-play" onclick="toggleRestTimer()">
+      <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+    </button>
+    <button id="floating-rest-reset" class="float-btn-reset" onclick="resetRestTimer()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg>
+    </button>
+  </div>
+
+  <!-- ↓↓↓ 3. ボトムメニューバー（4分割） ↓↓↓ -->
   <div id="bottom-nav-bar">
     <div class="nav-item active" id="nav-home" onclick="switchTab('home')">
       <div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></div>
@@ -198,13 +219,16 @@
       <div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></div>
       <div class="nav-text">LOG</div>
     </div>
+    <div class="nav-item" id="nav-timer" onclick="openTimerSheet()">
+      <div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
+      <div class="nav-text">TIMER</div>
+    </div>
     <div class="nav-item" id="nav-graph" onclick="switchTab('graph')">
       <div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line><line x1="2" y1="20" x2="22" y2="20"></line></svg></div>
       <div class="nav-text">GRAPH</div>
     </div>
   </div>
 
-  <!-- ★追加：切り分けた外部JSファイルの読み込み -->
   <script src="./app.js"></script>
 </body>
 </html>
