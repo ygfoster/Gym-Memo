@@ -51,23 +51,23 @@ body {
 .section-label { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.08em; text-transform: uppercase; }
 .section-hint { font-size: 0.75rem; color: var(--text-tertiary); }
 
-/* ===== ホーム画面の新レイアウト（比率調整） ===== */
-.home-layout-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 16px; margin-bottom: 24px; align-items: start; }
-.home-left-col, .home-right-col { display: flex; flex-direction: column; min-width: 0; }
 
-.compact-cal { padding: 0; margin-bottom: 0; }
-.compact-cal .cal-title { font-size: 1.35rem; margin-bottom: 6px; }
-.compact-cal .cal-weekdays { font-size: 0.55rem; padding-bottom: 4px; margin-bottom: 6px; border-bottom: 1px solid var(--border-subtle); }
-.compact-cal .cal-cell { height: 26px; }
-.compact-cal .cal-day { width: 22px; height: 22px; font-size: 0.75rem; border-width: 1px; }
+/* ★新・ホーム画面（縦積みレイアウト） ★ */
+.home-layout-vertical { display: flex; flex-direction: column; gap: 24px; margin-bottom: 24px; }
+.home-calendar-section { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 16px; padding: 16px; }
 
-.home-stats-block { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border-strong); }
-.stat-row { display: flex; justify-content: space-between; align-items: baseline; }
+/* 統計情報の横並び化 */
+.home-stats-row { display: flex; justify-content: space-around; margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--border-strong); }
+.stat-box { display: flex; flex-direction: column; align-items: center; }
 .stat-label { font-size: 0.75rem; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.05em; }
-.stat-val { font-family: 'Oswald', sans-serif; font-size: 1.4rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: baseline; gap: 4px; line-height: 1; }
+.stat-val { font-family: 'Oswald', sans-serif; font-size: 1.4rem; font-weight: 700; color: var(--text-primary); display: flex; align-items: baseline; gap: 4px; line-height: 1; margin-top: 4px; }
 .stat-val .stat-unit { font-family: 'Inter', sans-serif; font-size: 0.7rem; font-weight: 600; color: var(--text-secondary); }
 
-.home-right-col .section-header { margin: 0 0 8px 0; }
+/* カレンダー下の凡例（カラーキー） */
+.cal-legend { display: flex; justify-content: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px dashed var(--border-strong); }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.7rem; font-weight: 600; color: var(--text-secondary); }
+
+/* THIS WEEK のリストデザイン */
 .compact-list { margin-bottom: 0; background: transparent; border: none; }
 .list-row-compact { display: flex; justify-content: space-between; align-items: center; padding: 12px 6px; border-bottom: 1px solid var(--border-subtle); cursor: pointer; transition: background-color 0.1s; }
 .list-row-compact:active { background-color: var(--bg-input); }
@@ -77,28 +77,28 @@ body {
 .list-desc-col { font-size: 0.78rem; font-weight: 600; color: var(--text-primary); text-align: right; flex: 1; padding-left: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .list-desc-col.rest { font-weight: 400; color: var(--text-tertiary); }
 
-/* ===== カレンダー（色分けドット追加） ===== */
-.calendar-wrapper { padding: 4px 0 12px 0; cursor: default; }
+
+/* ===== カレンダー（色分けドットと被り回避） ===== */
+.calendar-wrapper { padding: 4px 0 0 0; cursor: default; }
 .cal-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .cal-title { font-family: 'Oswald', sans-serif; font-size: 2.5rem; font-weight: 700; letter-spacing: 0.02em; line-height: 1; color: var(--text-primary); margin: 0; }
 .cal-nav-btns { display: flex; gap: 10px; }
 .cal-nav-btns button { background-color: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-primary); border-radius: 50%; width: 40px; height: 40px; cursor: pointer; font-size: 1rem; display: flex; align-items: center; justify-content: center; }
 .cal-nav-btns button:active { background-color: var(--bg-elevated); transform: scale(0.92); }
 .cal-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-family: 'Inter', sans-serif; font-size: 0.7rem; font-weight: 600; color: var(--text-secondary); letter-spacing: 0.06em; padding-bottom: 10px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 8px; }
-.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 6px; column-gap: 2px; justify-items: center; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); row-gap: 8px; column-gap: 2px; justify-items: center; }
 .cal-cell { width: 100%; height: 46px; display: flex; align-items: center; justify-content: center; }
 .cal-cell.clickable { cursor: pointer; }
 
-/* ★変更：カレンダーの日付枠の調整とドット配置用設定 */
-.cal-day { position: relative; width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.95rem; font-weight: 400; border: 1px solid transparent; color: var(--text-primary); transition: transform 0.1s ease, background-color 0.12s ease; pointer-events: none; }
+/* ★変更：マスを大きくし、文字を上に浮かせてドットのスペースを確保 */
+.cal-day { position: relative; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.95rem; font-weight: 400; border: 1px solid transparent; color: var(--text-primary); transition: transform 0.1s ease, background-color 0.12s ease; pointer-events: none; padding-bottom: 6px; }
 .cal-cell.clickable:active .cal-day { transform: scale(0.86); background-color: rgba(255, 255, 255, 0.35); }
 .cal-day.other-month { color: var(--text-tertiary); }
-/* ★変更：色分けドットを目立たせるため、白背景や強い白枠を控えめに */
 .cal-day.trained { background-color: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.15); font-weight: 600; }
 .cal-day.today { background-color: var(--text-primary); color: var(--bg-base); border-color: var(--text-primary); font-weight: 700; }
 
-/* ★追加：ドットのデザイン */
-.cal-dots-wrap { position: absolute; bottom: 4px; left: 0; right: 0; display: flex; justify-content: center; gap: 3px; }
+/* ★追加：ドットの位置設定 */
+.cal-dots-wrap { position: absolute; bottom: 5px; left: 0; right: 0; display: flex; justify-content: center; gap: 3px; }
 .cal-dot { width: 4px; height: 4px; border-radius: 50%; }
 
 /* ===== 部位フィルター ===== */
@@ -189,10 +189,6 @@ body {
 #loading { text-align: center; margin-top: 100px; font-size: 0.9rem; color: var(--text-secondary); }
 input[type="number"], input[type="text"] { width: 100%; height: 100%; box-sizing: border-box; }
 
-/* =========================================================
-   新・タイマーシステム（ドラッグ小窓 ＆ ボトムシート）
-   ========================================================= */
-
 /* 1. ボトムメニューバー（4分割） */
 #bottom-nav-bar { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); width: 260px; background-color: rgba(28, 28, 30, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 30px; display: flex; justify-content: space-around; align-items: center; padding: 10px 4px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6); z-index: 2000; }
 .nav-item { display: flex; flex-direction: column; align-items: center; color: var(--text-tertiary); width: 25%; cursor: pointer; transition: color 0.2s, transform 0.1s; }
@@ -244,9 +240,7 @@ input[type="number"], input[type="text"] { width: 100%; height: 100%; box-sizing
 input[type="number"]::-webkit-outer-spin-button, input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 input[type="number"] { -moz-appearance: textfield; }
 
-/* =========================================================
-   履歴ポップアップ ＆ Alpine.js用スタイル
-   ========================================================= */
+/* 履歴ポップアップ ＆ Alpine.js用スタイル */
 [x-cloak] { display: none !important; }
 .history-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 3000; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .history-modal { background: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 20px; width: 100%; max-width: 400px; max-height: 80vh; display: flex; flex-direction: column; box-shadow: 0 20px 40px rgba(0,0,0,0.8); }
@@ -263,7 +257,7 @@ input[type="number"] { -moz-appearance: textfield; }
 .btn-history:active { background: var(--border-strong); }
 .btn-history svg { width: 20px; height: 20px; }
 
-/* ★追加：グラフ期間切り替えトグル */
+/* グラフ期間切り替えトグル */
 .graph-period-toggles { display: flex; gap: 8px; margin: 0 16px 20px; }
 .period-btn { flex: 1; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--text-secondary); padding: 8px 0; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; transition: all 0.1s ease; }
 .period-btn.active { background: var(--text-primary); color: var(--bg-base); border-color: var(--text-primary); }
