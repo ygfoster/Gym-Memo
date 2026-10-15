@@ -1,4 +1,3 @@
-// ★Service Worker の登録（オフライン対応）
 if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(()=>{}); }); }
 
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwTreNAF4AVwdAFRIdeVIqR4dYn87RgbSP0-u-0n3_90oCl_7ZlBlwADXWUvCsv4kELrg/exec';
@@ -19,6 +18,10 @@ const DATA_CACHE_KEY = "workout_app_data_cache_v1";
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
+
+// ★追加：部位カラー設定のグローバル管理
+const DEFAULT_COLORS = { "胸": "#FF453A", "背中": "#0A84FF", "脚": "#30D158", "肩": "#FF9F0A", "腕": "#BF5AF2", "その他": "#8E8E93" };
+let partColors = JSON.parse(localStorage.getItem('workout_app_colors_v1')) || DEFAULT_COLORS;
 
 document.addEventListener("DOMContentLoaded", function() {
   initBrowserHistoryGuard(); initDetailSwipe(); initTimerSheetSwipe();
@@ -114,7 +117,7 @@ async function startRestTimer() {
 function openTimerSheet() { document.getElementById('timer-bottom-sheet').classList.add('open'); document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active')); document.getElementById('nav-timer').classList.add('active'); }
 function closeTimerSheet() {
   document.getElementById('timer-bottom-sheet').classList.remove('open'); const cV = getCurrentVisibleView(); document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
-  if (cV === 'home' || cV === 'calendar') document.getElementById('nav-home').classList.add('active'); if (cV === 'dashboard' || cV === 'detail') document.getElementById('nav-log').classList.add('active'); if (cV === 'graph') document.getElementById('nav-graph').classList.add('active');
+  if (cV === 'home' || cV === 'calendar') document.getElementById('nav-home').classList.add('active'); if (cV === 'dashboard' || cV === 'detail') document.getElementById('nav-log').classList.add('active'); if (cV === 'graph') document.getElementById('nav-graph').classList.add('active'); if (cV === 'settings') document.getElementById('nav-settings').classList.add('active');
 }
 function initTimerSheetSwipe() {
   const sh = document.getElementById('timer-bottom-sheet'); if (!sh) return; let sY = 0;
@@ -133,9 +136,10 @@ function makeDraggable(el) {
 }
 
 /* ======================================================================
-   Alpine.js フォーム
+   Alpine.js (フォーム ＆ 新設設定画面)
 ====================================================================== */
 document.addEventListener('alpine:init', () => {
+  // 1. ワークアウト入力フォーム
   Alpine.data('workoutForm', () => ({
     formPart: '', formPartCustom: '', formExercises: [], hasDraft: false, isSaving: false, saveMsg: '', saveMsgColor: '', historyModal: { isOpen: false, exercise: '', records: [] },
     init() { window.alpineWorkoutForm = this; },
@@ -194,6 +198,22 @@ document.addEventListener('alpine:init', () => {
     },
     adjustTextarea(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
   }));
+
+  // ★2. 設定用フォーム
+  Alpine.data('settingsForm', () => ({
+    colors: partColors,
+    palette: ["#FF453A", "#FF9F0A", "#FFD60A", "#30D158", "#66D4CF", "#0A84FF", "#5E5CE6", "#BF5AF2", "#FF375F", "#8E8E93", "#FFFFFF"],
+    activePart: null,
+    openPalette(part) { this.activePart = this.activePart === part ? null : part; },
+    selectColor(color) {
+      if(!this.activePart) return;
+      this.colors[this.activePart] = color;
+      this.activePart = null;
+      partColors = this.colors;
+      localStorage.setItem('workout_app_colors_v1', JSON.stringify(this.colors));
+      renderHomeCalendar(); // カレンダーのドット色を即時反映
+    }
+  }));
 });
 
 /* ======================================================================
@@ -213,10 +233,10 @@ function initApp(data) {
 function initBrowserHistoryGuard() { try { window.history.replaceState({ view: 'root_guard' }, ''); window.history.pushState({ view: 'home' }, ''); window.addEventListener('popstate', function(e) { const state = e.state; if (!state || state.view === 'root_guard') { window.history.pushState({ view: 'home' }, ''); openHomeView(true); return; } applyStateFromHistory(state); }); } catch (err) {} }
 function pushAppHistory(s) { try { s.timestamp = Date.now(); localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(s)); window.history.pushState(s, ''); } catch (e) {} }
 function navigateBack() { const cV = getCurrentVisibleView(); if (cV === 'detail') { if (previousViewBeforeDetail === 'calendar') openCalendarDetailView(); else openHomeView(); } else openHomeView(); }
-function getCurrentVisibleView() { if (document.getElementById("view-dashboard").style.display === "block") return 'dashboard'; if (document.getElementById("view-day-detail").style.display === "block") return 'detail'; if (document.getElementById("view-calendar").style.display === "block") return 'calendar'; if (document.getElementById("view-graph").style.display === "block") return 'graph'; return 'home'; }
-function applyStateFromHistory(s) { if (!s || s.view === 'home') openHomeView(true); else if (s.view === 'calendar') { currentCalYear = s.year; currentCalMonth = s.month; openCalendarDetailView(true); } else if (s.view === 'detail') openDayDetailView(s.dateKey, s.label, s.fromView || 'home', null, true); else if (s.view === 'dashboard') openDashboardForDate(s.dateKey || null, true); else if (s.view === 'graph') switchTab('graph'); else openHomeView(true); }
+function getCurrentVisibleView() { if (document.getElementById("view-dashboard").style.display === "block") return 'dashboard'; if (document.getElementById("view-day-detail").style.display === "block") return 'detail'; if (document.getElementById("view-calendar").style.display === "block") return 'calendar'; if (document.getElementById("view-graph").style.display === "block") return 'graph'; if (document.getElementById("view-settings").style.display === "block") return 'settings'; return 'home'; }
+function applyStateFromHistory(s) { if (!s || s.view === 'home') openHomeView(true); else if (s.view === 'calendar') { currentCalYear = s.year; currentCalMonth = s.month; openCalendarDetailView(true); } else if (s.view === 'detail') openDayDetailView(s.dateKey, s.label, s.fromView || 'home', null, true); else if (s.view === 'dashboard') openDashboardForDate(s.dateKey || null, true); else if (s.view === 'graph') switchTab('graph'); else if (s.view === 'settings') switchTab('settings'); else openHomeView(true); }
 function restoreLastViewState() { try { const r = localStorage.getItem(STORAGE_VIEW_KEY); if (!r) { openHomeView(); return; } const s = JSON.parse(r); if (s.timestamp && (Date.now() - s.timestamp > 3600000)) { openHomeView(); return; } if (s && s.view && s.view !== 'home') { applyStateFromHistory(s); return; } } catch (e) {} openHomeView(); }
-function hideAllViews() { document.getElementById("loading").style.display = "none"; ['view-home','view-calendar','view-day-detail','view-dashboard','view-graph'].forEach(id => document.getElementById(id).style.display = "none"); ['nav-home','nav-log','nav-graph','nav-timer'].forEach(id => document.getElementById(id).classList.remove("active")); }
+function hideAllViews() { document.getElementById("loading").style.display = "none"; ['view-home','view-calendar','view-day-detail','view-dashboard','view-graph','view-settings'].forEach(id => document.getElementById(id).style.display = "none"); ['nav-home','nav-log','nav-graph','nav-timer','nav-settings'].forEach(id => document.getElementById(id).classList.remove("active")); }
 function openHomeView(sH) { hideAllViews(); document.getElementById("view-home").style.display = "block"; document.getElementById("nav-home").classList.add("active"); const now = new Date(); currentCalYear = now.getFullYear(); currentCalMonth = now.getMonth(); renderHomeCalendar(); renderWeeklySummary(); if (!sH) pushAppHistory({ view: 'home' }); else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'home', timestamp: Date.now() })); } catch(e){} } window.scrollTo(0, 0); }
 function openCalendarDetailView(sH) { hideAllViews(); document.getElementById("view-calendar").style.display = "block"; renderDetailCalendar(); if (!sH) pushAppHistory({ view: 'calendar', year: currentCalYear, month: currentCalMonth }); else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'calendar', year: currentCalYear, month: currentCalMonth, timestamp: Date.now() })); } catch(e){} } window.scrollTo(0, 0); }
 function openDashboardForDate(tK, sH) {
@@ -267,7 +287,7 @@ function updateHomeStats() {
   if(document.getElementById("home-total-days")) document.getElementById("home-total-days").innerText = ud.size;
 }
 
-// ★追加：カレンダーに色付きドットを出すための関数
+// ★修正：動的に設定されたカラーを読み込んでドットを描画
 function getDateTrainedParts(dateKey, useFilter) {
   const records = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === dateKey);
   let filtered = records;
@@ -276,8 +296,7 @@ function getDateTrainedParts(dateKey, useFilter) {
   }
   const parts = new Set();
   filtered.forEach(r => {
-    let pt = (r.part || "").trim();
-    if (pt === "足") pt = "脚";
+    let pt = (r.part || "").trim(); if (pt === "足") pt = "脚";
     if (["胸", "背中", "脚", "肩", "腕"].includes(pt)) parts.add(pt); else parts.add("その他");
   });
   return Array.from(parts);
@@ -297,15 +316,13 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
     const c = document.createElement("div"); c.className = "cal-cell clickable";
     const dK = `${y}/${m+1}/${d}`; const t = isDateTrained(dK, isD);
     
-    // ★追加：部位ドットのHTML生成
     let dotsHtml = '';
     if (t) {
       const parts = getDateTrainedParts(dK, isD);
       if (parts.length > 0) {
         dotsHtml = '<div class="cal-dots-wrap">';
         parts.slice(0, 4).forEach(pt => {
-          let color = '#8E8E93';
-          if (pt === '胸') color = '#FF453A'; else if (pt === '背中') color = '#0A84FF'; else if (pt === '脚') color = '#30D158'; else if (pt === '肩') color = '#FF9F0A'; else if (pt === '腕') color = '#BF5AF2';
+          let color = partColors[pt] || partColors["その他"];
           dotsHtml += `<div class="cal-dot" style="background-color: ${color};"></div>`;
         });
         dotsHtml += '</div>';
@@ -341,75 +358,42 @@ function renderWeeklySummary() {
 }
 
 function showError(err) { const l = document.getElementById("loading"); l.style.display = "block"; l.innerText = "エラー: " + err.message; l.style.color = "#FF453A"; }
+
+// ★追加：SETTINGSへのタブ切り替えを許可
 function switchTab(t) {
   hideAllViews();
   if (t === 'home') { document.getElementById("view-home").style.display = "block"; document.getElementById("nav-home").classList.add("active"); renderHomeCalendar(); renderWeeklySummary(); pushAppHistory({ view: 'home' }); }
   else if (t === 'log') { document.getElementById("view-dashboard").style.display = "block"; document.getElementById("nav-log").classList.add("active"); const n = new Date(); openDashboardForDate(n.getFullYear()+'/'+(n.getMonth()+1)+'/'+n.getDate()); }
   else if (t === 'graph') { document.getElementById("view-graph").style.display = "block"; document.getElementById("nav-graph").classList.add("active"); pushAppHistory({ view: 'graph' }); initGraphView(); }
+  else if (t === 'settings') { document.getElementById("view-settings").style.display = "block"; document.getElementById("nav-settings").classList.add("active"); pushAppHistory({ view: 'settings' }); }
   window.scrollTo(0, 0);
 }
 
-/* ======================================================================
-   グラフ系（期間切り替え追加）
-====================================================================== */
 let rmChartInstance = null; let volumeChartInstance = null;
-let currentGraphPeriod = 'ALL'; // ★追加：期間状態の保持
-
-// ★追加：期間切り替えボタンの処理
-window.setGraphPeriod = function(period) {
-  currentGraphPeriod = period;
-  document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
-  document.getElementById('period-btn-' + period).classList.add('active');
-  updateGraphs();
-};
+let currentGraphPeriod = 'ALL';
+window.setGraphPeriod = function(period) { currentGraphPeriod = period; document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active')); document.getElementById('period-btn-' + period).classList.add('active'); updateGraphs(); };
 
 function initGraphView() {
   const sel = document.getElementById("graph-exercise-select"); const cV = sel.value;
   const pm = { "胸": new Set(), "背中": new Set(), "脚": new Set(), "肩": new Set(), "腕": new Set(), "その他": new Set() };
-  globalTrainingHistory.forEach(r => {
-    const ex = (r.exercise || "").trim(); let pt = (r.part || "").trim();
-    if (!ex || ex === "種目不明") return;
-    if (pt === "足") pt = "脚"; if (!["胸", "背中", "脚", "肩", "腕"].includes(pt)) pt = "その他";
-    pm[pt].add(ex);
-  });
+  globalTrainingHistory.forEach(r => { const ex = (r.exercise || "").trim(); let pt = (r.part || "").trim(); if (!ex || ex === "種目不明") return; if (pt === "足") pt = "脚"; if (!["胸", "背中", "脚", "肩", "腕"].includes(pt)) pt = "その他"; pm[pt].add(ex); });
   let h = '<option value="">グラフ化する種目を選択...</option>';
-  ["胸", "背中", "脚", "肩", "腕", "その他"].forEach(p => {
-    const exs = Array.from(pm[p]).sort();
-    if (exs.length > 0) { h += `<optgroup label="【${p}】">`; exs.forEach(ex => { h += `<option value="${ex}">${ex}</option>`; }); h += `</optgroup>`; }
-  });
-  sel.innerHTML = h;
-  if (cV && Array.from(sel.options).some(o => o.value === cV)) { sel.value = cV; updateGraphs(); } else clearGraphs();
+  ["胸", "背中", "脚", "肩", "腕", "その他"].forEach(p => { const exs = Array.from(pm[p]).sort(); if (exs.length > 0) { h += `<optgroup label="【${p}】">`; exs.forEach(ex => { h += `<option value="${ex}">${ex}</option>`; }); h += `</optgroup>`; } });
+  sel.innerHTML = h; if (cV && Array.from(sel.options).some(o => o.value === cV)) { sel.value = cV; updateGraphs(); } else clearGraphs();
 }
-
 function clearGraphs() { if (rmChartInstance) rmChartInstance.destroy(); if (volumeChartInstance) volumeChartInstance.destroy(); }
-
 function updateGraphs() {
   const tE = document.getElementById("graph-exercise-select").value; if (!tE) { clearGraphs(); return; }
-  
   let records = globalTrainingHistory.filter(r => r.exercise === tE).sort((a,b) => new Date(normalizeDateStr(a.date)) - new Date(normalizeDateStr(b.date)));
-  
-  // ★追加：期間によるデータのフィルタリング
-  if (currentGraphPeriod !== 'ALL') {
-    const cutoffDate = new Date();
-    if (currentGraphPeriod === '1M') cutoffDate.setMonth(cutoffDate.getMonth() - 1);
-    if (currentGraphPeriod === '3M') cutoffDate.setMonth(cutoffDate.getMonth() - 3);
-    if (currentGraphPeriod === '6M') cutoffDate.setMonth(cutoffDate.getMonth() - 6);
-    records = records.filter(r => new Date(normalizeDateStr(r.date)) >= cutoffDate);
-  }
-
+  if (currentGraphPeriod !== 'ALL') { const cutoffDate = new Date(); if (currentGraphPeriod === '1M') cutoffDate.setMonth(cutoffDate.getMonth() - 1); if (currentGraphPeriod === '3M') cutoffDate.setMonth(cutoffDate.getMonth() - 3); if (currentGraphPeriod === '6M') cutoffDate.setMonth(cutoffDate.getMonth() - 6); records = records.filter(r => new Date(normalizeDateStr(r.date)) >= cutoffDate); }
   const lbls = [], rmd = [], vd = [];
   records.forEach(r => {
-    const dStr = formatDisplayDateWithDay(normalizeDateStr(r.date)).substring(5, 10); 
-    const ps = parseDetailsToSets(r.details); let dm = 0, dv = 0;
-    ps.forEach(s => {
-      const w = parseFloat(s.w), rep = parseFloat(s.r);
-      if (!isNaN(w) && !isNaN(rep) && rep > 0) { dv += (w * rep); const cRM = w * (1 + rep / 30); if (cRM > dm) dm = cRM; }
-    });
+    const dStr = formatDisplayDateWithDay(normalizeDateStr(r.date)).substring(5, 10); const ps = parseDetailsToSets(r.details); let dm = 0, dv = 0;
+    ps.forEach(s => { const w = parseFloat(s.w), rep = parseFloat(s.r); if (!isNaN(w) && !isNaN(rep) && rep > 0) { dv += (w * rep); const cRM = w * (1 + rep / 30); if (cRM > dm) dm = cRM; } });
     if (dm > 0 || dv > 0) { lbls.push(dStr); rmd.push(Math.round(dm)); vd.push(Math.round(dv)); }
   });
   drawChart('rmChart', '推定1RM (kg)', lbls, rmd, '#FF453A'); drawChart('volumeChart', '総重量 (kg)', lbls, vd, '#0A84FF');
 }
-
 function drawChart(cId, lbl, lbls, d, c) {
   const ctx = document.getElementById(cId).getContext('2d');
   if (cId === 'rmChart' && rmChartInstance) rmChartInstance.destroy(); if (cId === 'volumeChart' && volumeChartInstance) volumeChartInstance.destroy();
