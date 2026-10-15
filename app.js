@@ -43,6 +43,31 @@ document.addEventListener("DOMContentLoaded", function() {
   });
 });
 
+// ★追加：アプリがバックグラウンドから復帰した時にも時間をチェック
+document.addEventListener("visibilitychange", function() {
+  if (document.visibilityState === 'visible') {
+    try {
+      const raw = localStorage.getItem(STORAGE_VIEW_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved.timestamp && (Date.now() - saved.timestamp > 3600000)) { // 1時間(3600000ms)経過
+          openHomeView(); // 強制的にホームへ
+        }
+      }
+    } catch(e){}
+  } else {
+    // バックグラウンドに行く瞬間に今の時間を記録
+    try {
+      const raw = localStorage.getItem(STORAGE_VIEW_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        saved.timestamp = Date.now();
+        localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(saved));
+      }
+    } catch(e){}
+  }
+});
+
 function initApp(data) {
   document.getElementById("loading").style.display = "none";
   if (data) {
@@ -72,7 +97,11 @@ function initBrowserHistoryGuard() {
 }
 
 function pushAppHistory(stateObj) {
-  try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(stateObj)); window.history.pushState(stateObj, ''); } catch (e) {}
+  try { 
+    stateObj.timestamp = Date.now(); // ★画面の状態と一緒に今の時間を記録する
+    localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(stateObj)); 
+    window.history.pushState(stateObj, ''); 
+  } catch (e) {}
 }
 
 function navigateBack() {
@@ -107,6 +136,13 @@ function restoreLastViewState() {
     const raw = localStorage.getItem(STORAGE_VIEW_KEY);
     if (!raw) { openHomeView(); return; }
     const saved = JSON.parse(raw);
+
+    // ★タスクキル後の起動時：1時間以上経過していたらホームに戻す
+    if (saved.timestamp && (Date.now() - saved.timestamp > 3600000)) {
+      openHomeView();
+      return;
+    }
+
     if (saved && saved.view && saved.view !== 'home') { applyStateFromHistory(saved); return; }
   } catch (e) {}
   openHomeView();
@@ -130,7 +166,7 @@ function openHomeView(skipHistory) {
   const now = new Date(); currentCalYear = now.getFullYear(); currentCalMonth = now.getMonth();
   renderHomeCalendar(); renderWeeklySummary();
   if (!skipHistory) pushAppHistory({ view: 'home' });
-  else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'home' })); } catch(e){} }
+  else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'home', timestamp: Date.now() })); } catch(e){} }
   window.scrollTo(0, 0);
 }
 
@@ -139,7 +175,7 @@ function openCalendarDetailView(skipHistory) {
   document.getElementById("view-calendar").style.display = "block";
   renderDetailCalendar();
   if (!skipHistory) pushAppHistory({ view: 'calendar', year: currentCalYear, month: currentCalMonth });
-  else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'calendar', year: currentCalYear, month: currentCalMonth })); } catch(e){} }
+  else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'calendar', year: currentCalYear, month: currentCalMonth, timestamp: Date.now() })); } catch(e){} }
   window.scrollTo(0, 0);
 }
 
@@ -163,7 +199,7 @@ function openDashboardForDate(targetDateKey, skipHistory) {
   loadTrainingFormForDate(currentRecordingDateStr);
 
   if (!skipHistory) pushAppHistory({ view: 'dashboard', dateKey: currentRecordingDateStr });
-  else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'dashboard', dateKey: currentRecordingDateStr })); } catch(e){} }
+  else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'dashboard', dateKey: currentRecordingDateStr, timestamp: Date.now() })); } catch(e){} }
   window.scrollTo(0, 0);
 }
 
@@ -253,7 +289,6 @@ function openDayDetailView(dateKey, displayLabel, fromView, slideClass, skipHist
         parsedSets.forEach((s, idx) => {
           const line = document.createElement("div"); line.className = "set-line";
           const wDisp = s.w !== '' ? `${s.w}<span class="set-line-unit">kg</span>` : `-`; const rDisp = s.r !== '' ? `${s.r}<span class="set-line-unit">回</span>` : `-`;
-          // ★修正箇所1: 「ﾗ」を「×」に変更
           line.innerHTML = `<span class="set-line-idx">SET ${idx + 1}</span><span class="set-line-val">${wDisp} × ${rDisp}</span>`; table.appendChild(line);
         });
         card.appendChild(table);
@@ -267,7 +302,7 @@ function openDayDetailView(dateKey, displayLabel, fromView, slideClass, skipHist
   editBtn.onclick = function() { openDashboardForDate(currentDetailDateKey); };
   const stateObj = { view: 'detail', dateKey: currentDetailDateKey, label: resolvedLabel, fromView: previousViewBeforeDetail };
   if (!skipHistory && !slideClass) pushAppHistory(stateObj);
-  else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(stateObj)); } catch(e){} }
+  else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({...stateObj, timestamp: Date.now()})); } catch(e){} }
   if (!slideClass) window.scrollTo(0, 0);
 }
 
@@ -486,7 +521,6 @@ function saveTraining() {
       const setRow = row.querySelector('.set-row[data-set="' + i + '"]');
       if (setRow && setRow.style.display !== "none") {
         const w = setRow.querySelector('.weight-input').value.trim(); const r = setRow.querySelector('.reps-input').value.trim();
-        // ★修正箇所3: GASに送るデータ内の「ﾗ」を「×」に変更
         if (w || r) { setsText += `${i}セット目: ${w ? w + 'kg' : '-'} × ${r ? r + '回' : '-'}\n`; hasSets = true; }
       }
     }
@@ -523,7 +557,6 @@ function cleanMetric(val, suffix) { if (val === undefined || val === null) retur
 function parseDetailsToSets(detailsStr) {
   if (!detailsStr) return [];
   return detailsStr.split('\n').filter(l => l.trim() !== '').map(line => {
-    // ★修正箇所4: 過去に「ﾗ」で保存したデータも、これからの「×」も両方読み込めるように正規表現を修正
     const match = line.match(/:\s*([0-9.]+|-)(?:kg)?\s*[×xXﾗ]\s*([0-9.]+|-)(?:回)?/);
     if (match) return { w: match[1] === '-' ? '' : match[1], r: match[2] === '-' ? '' : match[2] };
     return { w: '', r: '' };
