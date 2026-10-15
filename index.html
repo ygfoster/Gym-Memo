@@ -15,11 +15,12 @@
   
   <title>ジムメモ</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- ★追加：魔法のツール Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;400;500;600;700&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <!-- 保存中フルスクリーンオーバーレイ -->
   <div id="saving-overlay" class="saving-overlay">
     <div class="saving-box">
       <div id="saving-spinner" class="spinner"></div>
@@ -31,7 +32,7 @@
   <div class="container">
     <div id="loading">読み込み中...</div>
 
-    <!-- ==================== 1. ホーム画面 ==================== -->
+    <!-- 1. ホーム画面 -->
     <div id="view-home" style="display: none;">
       <div class="home-layout-grid">
         <div class="home-left-col">
@@ -41,14 +42,8 @@
             <div class="cal-grid" id="home-cal-grid"></div>
           </div>
           <div class="home-stats-block">
-            <div class="stat-row">
-              <div class="stat-label">MONTHLY</div>
-              <div class="stat-val"><span id="home-monthly-days">0</span><span class="stat-unit">days</span></div>
-            </div>
-            <div class="stat-row">
-              <div class="stat-label">TOTAL</div>
-              <div class="stat-val"><span id="home-total-days">0</span><span class="stat-unit">days</span></div>
-            </div>
+            <div class="stat-row"><div class="stat-label">MONTHLY</div><div class="stat-val"><span id="home-monthly-days">0</span><span class="stat-unit">days</span></div></div>
+            <div class="stat-row"><div class="stat-label">TOTAL</div><div class="stat-val"><span id="home-total-days">0</span><span class="stat-unit">days</span></div></div>
           </div>
         </div>
         <div class="home-right-col">
@@ -59,7 +54,7 @@
       <button class="btn-primary" onclick="openDashboardForDate(null)">ワークアウトを記録</button>
     </div>
 
-    <!-- ==================== 2. カレンダー詳細＆部位フィルター画面 ==================== -->
+    <!-- 2. カレンダー詳細＆部位フィルター画面 -->
     <div id="view-calendar" style="display: none;">
       <div class="top-nav">
         <button class="nav-back" onclick="navigateBack()"> ホーム</button>
@@ -81,7 +76,7 @@
       </div>
     </div>
 
-    <!-- ==================== 3. 日別詳細画面 ==================== -->
+    <!-- 3. 日別詳細画面 -->
     <div id="view-day-detail" style="display: none;">
       <div class="top-nav"><button class="nav-back" onclick="navigateBack()"> 戻る</button></div>
       <div class="detail-date-bar">
@@ -106,12 +101,12 @@
       <button class="btn-primary" id="day-detail-edit-btn" style="margin-top: 20px;">この日の記録を編集</button>
     </div>
 
-    <!-- ==================== 4. ワークアウト記録画面 ==================== -->
-    <div id="view-dashboard" style="display: none;">
+    <!-- ★ココから大改造：Alpine.jsによる軽量化フォーム画面 -->
+    <div id="view-dashboard" style="display: none;" x-data="workoutForm" x-cloak>
       <div class="top-nav">
         <button class="nav-back" onclick="navigateBack()"> 戻る</button>
         <div class="nav-context-wrap">
-          <span class="draft-badge" id="draft-status-badge">下書き保存済</span>
+          <span class="draft-badge" x-show="hasDraft" style="display: inline-block;">下書き保存済</span>
           <span class="nav-context-date" id="recording-target-label"></span>
         </div>
       </div>
@@ -130,23 +125,94 @@
             <div class="vital-sub-item"><div class="vital-sub-label">C</div><div class="vital-sub-val" id="c-val"></div></div>
           </div>
         </div>
+        
         <div class="section-header" style="margin-top: 8px;"><span class="section-label">WORKOUT LOG</span></div>
+        
+        <!-- 部位選択 -->
         <div class="form-card" style="padding: 14px 18px; margin-bottom: 12px;">
-          <select id="global-part" class="select-field" style="font-weight: 600;" onchange="handlePartChange(this)">
+          <select class="select-field" style="font-weight: 600;" x-model="formPart" @change="saveDraft()">
             <option value="">トレーニング部位を選択...</option>
             <option value="胸">胸</option><option value="背中">背中</option><option value="腕">腕</option>
             <option value="肩">肩</option><option value="脚">脚</option><option value="custom">その他（自由記述）</option>
           </select>
-          <input type="text" id="global-part-custom" class="input-field" placeholder="部位を入力 (例: 胸・三頭筋)" style="display: none; margin-top: 10px;" oninput="this.style.borderColor='transparent'; document.getElementById('save-msg').innerText=''; saveDraftForCurrentDate();">
+          <input type="text" class="input-field" placeholder="部位を入力 (例: 胸・三頭筋)" style="margin-top: 10px;" x-show="formPart === 'custom'" x-model="formPartCustom" @input="saveDraft()">
         </div>
-        <div id="exerciseList"></div>
-        <button type="button" class="btn-secondary" onclick="addExerciseRow(); saveDraftForCurrentDate();">＋ 次の種目を追加</button>
-        <button type="button" class="btn-primary" id="save-btn" onclick="saveTraining()">記録を保存</button>
-        <div id="save-msg"></div>
+        
+        <!-- 種目リスト（templateタグで自動生成される魔法） -->
+        <div>
+          <template x-for="(ex, index) in formExercises" :key="index">
+            <div class="form-card exercise-row">
+              <div class="form-card-header">
+                <span class="form-card-num" x-text="`EXERCISE ${index + 1}`"></span>
+                <button type="button" class="btn-remove-card" x-show="index > 0" @click="removeExercise(index)">削除</button>
+              </div>
+              
+              <!-- 種目名入力 ＆ 履歴ボタン -->
+              <div class="input-with-history">
+                <div class="autocomplete-wrapper" style="flex: 1; margin-bottom: 0;">
+                  <input type="text" class="input-field" placeholder="種目名を入力" autocomplete="off" x-model="ex.name" @input="suggest(index)" @focus="suggest(index)">
+                  <!-- サジェスト -->
+                  <div class="suggest-box" x-show="ex.suggests.length > 0" style="display:block;">
+                    <template x-for="sg in ex.suggests">
+                      <div class="suggest-item" @click="selectSuggest(index, sg.name)">
+                        <span x-text="sg.name"></span>
+                        <span x-show="sg.part" class="suggest-part-tag" x-text="sg.part"></span>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+                <!-- ★新機能：履歴ボタン -->
+                <button type="button" class="btn-history" @click="openHistory(ex.name)" title="過去の記録を見る">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                </button>
+              </div>
+              
+              <!-- セット入力 -->
+              <div style="margin-bottom: 10px;">
+                <template x-for="(set, sIndex) in ex.sets">
+                  <div class="set-input-row" x-show="sIndex === 0 || ex.sets[sIndex-1].w !== '' || ex.sets[sIndex-1].r !== '' || set.w !== '' || set.r !== ''">
+                    <span class="set-badge" x-text="`#${sIndex + 1}`"></span>
+                    <div class="unit-input-wrap"><input type="number" step="any" inputmode="decimal" placeholder="0" x-model="set.w" @input="saveDraft()"><span class="unit-suffix">kg</span></div>
+                    <div class="set-multiply">×</div>
+                    <div class="unit-input-wrap"><input type="number" step="1" inputmode="numeric" placeholder="0" x-model="set.r" @input="saveDraft()"><span class="unit-suffix">回</span></div>
+                    <button type="button" class="btn-clear-set" @click="set.w=''; set.r=''; saveDraft();" title="クリア"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+                  </div>
+                </template>
+              </div>
+              <!-- メモ -->
+              <textarea class="textarea-field" rows="1" placeholder="メモ・フォームの意識など" style="overflow: hidden; resize: none;" x-model="ex.memo" @input="adjustTextarea($event.target); saveDraft();"></textarea>
+            </div>
+          </template>
+        </div>
+        
+        <button type="button" class="btn-secondary" @click="addExercise()">＋ 次の種目を追加</button>
+        <button type="button" class="btn-primary" @click="saveTraining()" :disabled="isSaving">記録を保存</button>
+        <div id="save-msg" x-text="saveMsg" :style="`color: ${saveMsgColor}`"></div>
       </div>
+
+      <!-- ★新機能：履歴ポップアップ -->
+      <div x-show="historyModal.isOpen" class="history-modal-overlay">
+        <div class="history-modal" @click.stop>
+          <div class="history-modal-header">
+            <span class="history-modal-title" x-text="historyModal.exercise + ' の履歴'"></span>
+            <button class="history-close-btn" @click="historyModal.isOpen = false">×</button>
+          </div>
+          <div class="history-modal-body">
+            <template x-for="rec in historyModal.records">
+              <div class="history-record-card">
+                <div class="history-record-date" x-text="rec.dateStr"></div>
+                <div class="history-record-sets" x-text="rec.details"></div>
+                <div class="history-record-memo" x-show="rec.memo" x-text="rec.memo"></div>
+              </div>
+            </template>
+            <div x-show="historyModal.records.length === 0" style="text-align:center; color:#8E8E93; font-size:0.9rem; padding: 20px;">記録がありません</div>
+          </div>
+        </div>
+      </div>
+
     </div>
 
-    <!-- ==================== 5. グラフ画面 ==================== -->
+    <!-- 5. グラフ画面 -->
     <div id="view-graph" style="display: none;">
       <div class="top-nav"><span class="nav-context-date">TRAINING DATA</span></div>
       <div class="form-card" style="padding: 14px 18px; margin: 10px 16px 20px;">
@@ -161,11 +227,10 @@
     </div>
   </div>
 
-  <!-- ↓↓↓ 1. iPhone風タイマー・ボトムシート ↓↓↓ -->
+  <!-- ボトムシートとウィジェット -->
   <div id="timer-bottom-sheet">
     <div class="sheet-handle" onclick="closeTimerSheet()"></div>
     <div class="sheet-title">TIMER SETTINGS</div>
-    
     <div class="preset-pills">
       <button class="pill-btn preset-btn active" onclick="selectPreset(180, this)">胸 3分</button>
       <button class="pill-btn preset-btn" onclick="selectPreset(180, this)">背中 3分</button>
@@ -173,60 +238,35 @@
       <button class="pill-btn preset-btn" onclick="selectPreset(120, this)">腕 2分</button>
       <button class="pill-btn preset-btn" onclick="selectPreset(90, this)">肩 1分半</button>
     </div>
-
     <div class="timer-circle-wrap">
-      <div class="timer-circle-iphone stopped">
-         <span id="sheet-rest-time">03:00</span>
-      </div>
+      <div class="timer-circle-iphone stopped"><span id="sheet-rest-time">03:00</span></div>
     </div>
-
     <div class="timer-adjust-row">
       <button class="adjust-btn" onclick="adjustRestTime(-10)">- 10s</button>
       <button class="adjust-btn" onclick="adjustRestTime(10)">+ 10s</button>
     </div>
-
     <div class="timer-action-row">
       <button id="sheet-reset-btn" class="sheet-circle-btn reset" onclick="resetRestTimer()">キャンセル</button>
       <button id="sheet-play-btn" class="sheet-circle-btn play" onclick="toggleRestTimer()">開始</button>
     </div>
   </div>
 
-  <!-- ↓↓↓ 2. ドラッグ可能なフローティング小窓 ↓↓↓ -->
   <div id="floating-total" class="floating-widget">
     <div class="floating-total-label">TOTAL</div>
     <div id="floating-total-time" class="floating-total-time">00:00</div>
   </div>
 
   <div id="floating-rest" class="floating-widget">
-    <div class="rest-circle">
-      <span id="floating-rest-time">03:00</span>
-    </div>
-    <button id="floating-rest-play" class="float-btn-play" onclick="toggleRestTimer()">
-      <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-    </button>
-    <button id="floating-rest-reset" class="float-btn-reset" onclick="resetRestTimer()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg>
-    </button>
+    <div class="rest-circle"><span id="floating-rest-time">03:00</span></div>
+    <button id="floating-rest-play" class="float-btn-play" onclick="toggleRestTimer()"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button>
+    <button id="floating-rest-reset" class="float-btn-reset" onclick="resetRestTimer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg></button>
   </div>
 
-  <!-- ↓↓↓ 3. ボトムメニューバー（4分割） ↓↓↓ -->
   <div id="bottom-nav-bar">
-    <div class="nav-item active" id="nav-home" onclick="switchTab('home')">
-      <div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></div>
-      <div class="nav-text">HOME</div>
-    </div>
-    <div class="nav-item" id="nav-log" onclick="switchTab('log')">
-      <div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></div>
-      <div class="nav-text">LOG</div>
-    </div>
-    <div class="nav-item" id="nav-timer" onclick="openTimerSheet()">
-      <div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div>
-      <div class="nav-text">TIMER</div>
-    </div>
-    <div class="nav-item" id="nav-graph" onclick="switchTab('graph')">
-      <div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line><line x1="2" y1="20" x2="22" y2="20"></line></svg></div>
-      <div class="nav-text">GRAPH</div>
-    </div>
+    <div class="nav-item active" id="nav-home" onclick="switchTab('home')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></div><div class="nav-text">HOME</div></div>
+    <div class="nav-item" id="nav-log" onclick="switchTab('log')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></div><div class="nav-text">LOG</div></div>
+    <div class="nav-item" id="nav-timer" onclick="openTimerSheet()"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div><div class="nav-text">TIMER</div></div>
+    <div class="nav-item" id="nav-graph" onclick="switchTab('graph')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line><line x1="2" y1="20" x2="22" y2="20"></line></svg></div><div class="nav-text">GRAPH</div></div>
   </div>
 
   <script src="./app.js"></script>
