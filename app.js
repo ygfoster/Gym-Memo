@@ -253,7 +253,8 @@ function openDayDetailView(dateKey, displayLabel, fromView, slideClass, skipHist
         parsedSets.forEach((s, idx) => {
           const line = document.createElement("div"); line.className = "set-line";
           const wDisp = s.w !== '' ? `${s.w}<span class="set-line-unit">kg</span>` : `-`; const rDisp = s.r !== '' ? `${s.r}<span class="set-line-unit">回</span>` : `-`;
-          line.innerHTML = `<span class="set-line-idx">SET ${idx + 1}</span><span class="set-line-val">${wDisp} ﾗ ${rDisp}</span>`; table.appendChild(line);
+          // ★修正箇所1: 「ﾗ」を「×」に変更
+          line.innerHTML = `<span class="set-line-idx">SET ${idx + 1}</span><span class="set-line-val">${wDisp} × ${rDisp}</span>`; table.appendChild(line);
         });
         card.appendChild(table);
       } else if (r.details) {
@@ -377,7 +378,7 @@ function addExerciseRow(existingRecord) {
     <div class="set-input-row set-row" data-set="${i}" style="${displayStyle}">
       <span class="set-badge">#${i}</span>
       <div class="unit-input-wrap"><input type="number" step="any" inputmode="decimal" class="weight-input" placeholder="0" oninput="handleSetInput(this)"><span class="unit-suffix">kg</span></div>
-      <div class="set-multiply">ﾗ</div>
+      <div class="set-multiply">×</div>
       <div class="unit-input-wrap"><input type="number" step="1" inputmode="numeric" class="reps-input" placeholder="0" oninput="handleSetInput(this)"><span class="unit-suffix">回</span></div>
       <button type="button" class="btn-clear-set" onclick="removeSet(this)" title="クリア"></button>
     </div>`;
@@ -485,7 +486,8 @@ function saveTraining() {
       const setRow = row.querySelector('.set-row[data-set="' + i + '"]');
       if (setRow && setRow.style.display !== "none") {
         const w = setRow.querySelector('.weight-input').value.trim(); const r = setRow.querySelector('.reps-input').value.trim();
-        if (w || r) { setsText += `${i}セット目: ${w ? w + 'kg' : '-'} ﾗ ${r ? r + '回' : '-'}\n`; hasSets = true; }
+        // ★修正箇所3: GASに送るデータ内の「ﾗ」を「×」に変更
+        if (w || r) { setsText += `${i}セット目: ${w ? w + 'kg' : '-'} × ${r ? r + '回' : '-'}\n`; hasSets = true; }
       }
     }
     setsText = setsText.trim();
@@ -521,7 +523,8 @@ function cleanMetric(val, suffix) { if (val === undefined || val === null) retur
 function parseDetailsToSets(detailsStr) {
   if (!detailsStr) return [];
   return detailsStr.split('\n').filter(l => l.trim() !== '').map(line => {
-    const match = line.match(/:\s*([0-9.]+|-)(?:kg)?\s*[ﾗxXﾗ]\s*([0-9.]+|-)(?:回)?/);
+    // ★修正箇所4: 過去に「ﾗ」で保存したデータも、これからの「×」も両方読み込めるように正規表現を修正
+    const match = line.match(/:\s*([0-9.]+|-)(?:kg)?\s*[×xXﾗ]\s*([0-9.]+|-)(?:回)?/);
     if (match) return { w: match[1] === '-' ? '' : match[1], r: match[2] === '-' ? '' : match[2] };
     return { w: '', r: '' };
   });
