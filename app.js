@@ -1,9 +1,5 @@
 // ★Service Worker の登録（オフライン対応）
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(err => console.error(err));
-  });
-}
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => { navigator.serviceWorker.register('./sw.js').catch(()=>{}); }); }
 
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwTreNAF4AVwdAFRIdeVIqR4dYn87RgbSP0-u-0n3_90oCl_7ZlBlwADXWUvCsv4kELrg/exec';
 const API_TOKEN = "MyGymAppSecretToken_2026";
@@ -19,228 +15,95 @@ let currentDetailDateKey = "";
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v1"; // ★追加：ゼロ秒起動のためのローカルキャッシュ
-const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1"; // ★追加：オフライン保存用キュー
+const DATA_CACHE_KEY = "workout_app_data_cache_v1";
+const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
 
 document.addEventListener("DOMContentLoaded", function() {
-  initBrowserHistoryGuard();
-  initDetailSwipe();
-  initTimerSheetSwipe();
-
-  makeDraggable(document.getElementById('floating-total'));
-  makeDraggable(document.getElementById('floating-rest'));
+  initBrowserHistoryGuard(); initDetailSwipe(); initTimerSheetSwipe();
+  makeDraggable(document.getElementById('floating-total')); makeDraggable(document.getElementById('floating-rest'));
   updateTimerDisplays();
 
-  // ★1. フリーズ回避：前回取得したデータがあれば、とりあえずそれを使って「ゼロ秒」で画面を立ち上げる
   const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
-  if (cachedRaw) {
-    try { initApp(JSON.parse(cachedRaw)); } catch(e) {}
-  }
+  if (cachedRaw) { try { initApp(JSON.parse(cachedRaw)); } catch(e) {} }
 
-  // ★2. 裏側でGASから最新データを取得しにいく
   fetch(GAS_URL + '?action=getInitialData&limit=45&offset=0&token=' + API_TOKEN)
-    .then(response => response.json())
-    .then(data => {
-      if(data.error) {
-        if (!cachedRaw) showError(new Error(data.error)); // キャッシュもない完全初回だけエラー表示
-      } else {
-        localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data)); // 最新データをキャッシュに上書き保存
-        initApp(data); // 画面を最新状態に書き換える
-      }
-    })
-    .catch(error => {
-      if (!cachedRaw) showError(error); // 圏外かつ完全初回起動の時だけエラー表示
-    });
+    .then(r => r.json()).then(data => {
+      if(data.error) { if (!cachedRaw) showError(new Error(data.error)); } 
+      else { localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data)); initApp(data); }
+    }).catch(e => { if (!cachedRaw) showError(e); });
 
-  document.addEventListener("click", function(e) {
-    if (!e.target.classList.contains("exercise")) {
-      document.querySelectorAll(".suggest-box").forEach(box => box.style.display = "none");
-    }
-  });
-
-  // ★3. 起動時にオフラインで溜まっていた記録があればGASへ自動送信する
+  document.addEventListener("click", e => { if (!e.target.classList.contains("exercise")) document.querySelectorAll(".suggest-box").forEach(b => b.style.display = "none"); });
   syncOfflineQueue();
 });
 
-// 電波が復活した瞬間に自動送信を発動
 window.addEventListener('online', syncOfflineQueue);
 
-// オフラインデータの自動同期関数
 async function syncOfflineQueue() {
   if (!navigator.onLine) return; 
-  const queueRaw = localStorage.getItem(OFFLINE_QUEUE_KEY);
-  if (!queueRaw) return;
-  
-  let queue = [];
-  try { queue = JSON.parse(queueRaw); } catch(e) { return; }
+  const queueRaw = localStorage.getItem(OFFLINE_QUEUE_KEY); if (!queueRaw) return;
+  let queue = []; try { queue = JSON.parse(queueRaw); } catch(e) { return; }
   if (queue.length === 0) return;
-
-  if (window.isSyncing) return;
-  window.isSyncing = true;
+  if (window.isSyncing) return; window.isSyncing = true;
   let remainingQueue = [...queue];
 
   for (let i = 0; i < queue.length; i++) {
     const item = queue[i];
     try {
-      const response = await fetch(GAS_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(item.payload)
-      });
-      const result = await response.json();
+      const res = await fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(item.payload) });
+      const result = await res.json();
       if (result.success) {
         if (result.updatedHistory) {
           globalTrainingHistory = result.updatedHistory;
-          // ローカルキャッシュも最新化
           const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
-          if (cachedRaw) {
-             let cData = JSON.parse(cachedRaw);
-             cData.trainingHistory = result.updatedHistory;
-             localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cData));
-          }
+          if (cachedRaw) { let cData = JSON.parse(cachedRaw); cData.trainingHistory = result.updatedHistory; localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cData)); }
         }
         remainingQueue = remainingQueue.filter(q => q.id !== item.id);
       }
-    } catch (e) { break; } // 途中で電波が途切れたら終了
+    } catch (e) { break; } 
   }
-
-  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remainingQueue));
-  window.isSyncing = false;
-
-  // もしデータが送信されて減っていれば、画面を再描画する
-  if (queue.length !== remainingQueue.length) {
-    initApp(null); 
-  }
+  localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remainingQueue)); window.isSyncing = false;
+  if (queue.length !== remainingQueue.length) { initApp(null); }
 }
 
 document.addEventListener("visibilitychange", function() {
   if (document.visibilityState === 'visible') {
-    try {
-      const raw = localStorage.getItem(STORAGE_VIEW_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw);
-        if (saved.timestamp && (Date.now() - saved.timestamp > 3600000)) { openHomeView(); }
-      }
-    } catch(e){}
-    syncOfflineQueue(); // アプリに戻ってきた時にも同期を試みる
+    try { const raw = localStorage.getItem(STORAGE_VIEW_KEY); if (raw) { const s = JSON.parse(raw); if (s.timestamp && (Date.now() - s.timestamp > 3600000)) openHomeView(); } } catch(e){}
+    syncOfflineQueue();
   } else {
-    try {
-      const raw = localStorage.getItem(STORAGE_VIEW_KEY);
-      if (raw) {
-        const saved = JSON.parse(raw);
-        saved.timestamp = Date.now();
-        localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(saved));
-      }
-    } catch(e){}
+    try { const raw = localStorage.getItem(STORAGE_VIEW_KEY); if (raw) { const s = JSON.parse(raw); s.timestamp = Date.now(); localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(s)); } } catch(e){}
   }
 });
 
 /* ======================================================================
-   新タイマーシステム（TOTAL & REST）
+   タイマーシステム
 ====================================================================== */
-let currentPresetSeconds = 180;
-let restRemainingSeconds = 180;
-let isResting = false;
-let restTimerInterval = null;
-let restEndTime = 0;
+let currentPresetSeconds = 180, restRemainingSeconds = 180, isResting = false, restTimerInterval = null, restEndTime = 0;
+let totalTimerInterval = null, totalStartTime = 0, totalSeconds = 0, isTotalTimerRunning = false, wakeLock = null;
 
-let totalTimerInterval = null;
-let totalStartTime = 0;
-let totalSeconds = 0;
-let isTotalTimerRunning = false;
-let wakeLock = null;
-
-function formatTime(seconds) {
-  if (seconds < 0) seconds = 0;
-  const m = Math.floor(seconds / 60).toString().padStart(2, '0');
-  const s = (Math.floor(seconds) % 60).toString().padStart(2, '0');
-  return `${m}:${s}`;
-}
-
+function formatTime(s) { if (s < 0) s = 0; return `${Math.floor(s / 60).toString().padStart(2, '0')}:${(Math.floor(s) % 60).toString().padStart(2, '0')}`; }
 function updateTimerDisplays() {
-  const timeStr = formatTime(restRemainingSeconds);
-  document.getElementById('floating-rest-time').innerText = timeStr;
-  document.getElementById('sheet-rest-time').innerText = timeStr;
-  
-  const playBtnSheet = document.getElementById('sheet-play-btn');
-  const playBtnFloat = document.getElementById('floating-rest-play');
-  const circleIphone = document.querySelector('.timer-circle-iphone');
-  
-  if (isResting) {
-    playBtnSheet.innerText = "一時停止";
-    playBtnSheet.className = "sheet-circle-btn stop";
-    playBtnFloat.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`;
-    circleIphone.className = "timer-circle-iphone running";
-  } else {
-    playBtnSheet.innerText = "開始";
-    playBtnSheet.className = "sheet-circle-btn play";
-    playBtnFloat.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`;
-    circleIphone.className = "timer-circle-iphone stopped";
-  }
+  const tStr = formatTime(restRemainingSeconds);
+  document.getElementById('floating-rest-time').innerText = tStr; document.getElementById('sheet-rest-time').innerText = tStr;
+  const pbS = document.getElementById('sheet-play-btn'), pbF = document.getElementById('floating-rest-play'), cI = document.querySelector('.timer-circle-iphone');
+  if (isResting) { pbS.innerText = "一時停止"; pbS.className = "sheet-circle-btn stop"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`; cI.className = "timer-circle-iphone running"; }
+  else { pbS.innerText = "開始"; pbS.className = "sheet-circle-btn play"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`; cI.className = "timer-circle-iphone stopped"; }
 }
-
-function selectPreset(seconds, btn) {
-  pauseRestTimer();
-  currentPresetSeconds = seconds;
-  restRemainingSeconds = seconds;
-  document.querySelectorAll('.preset-btn').forEach(el => el.classList.remove('active'));
-  btn.classList.add('active');
-  updateTimerDisplays();
-}
-
-function adjustRestTime(amount) {
-  restRemainingSeconds += amount;
-  if (restRemainingSeconds < 0) restRemainingSeconds = 0;
-  if (isResting) { restEndTime += amount * 1000; }
-  updateTimerDisplays();
-}
-
-function resetRestTimer() {
-  pauseRestTimer();
-  restRemainingSeconds = currentPresetSeconds;
-  updateTimerDisplays();
-}
-
-function toggleRestTimer() {
-  if (isResting) { pauseRestTimer(); } else { startRestTimer(); }
-}
-
-function pauseRestTimer() {
-  isResting = false;
-  clearInterval(restTimerInterval);
-  if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
-  updateTimerDisplays();
-}
-
+function selectPreset(s, b) { pauseRestTimer(); currentPresetSeconds = s; restRemainingSeconds = s; document.querySelectorAll('.preset-btn').forEach(e => e.classList.remove('active')); b.classList.add('active'); updateTimerDisplays(); }
+function adjustRestTime(a) { restRemainingSeconds += a; if (restRemainingSeconds < 0) restRemainingSeconds = 0; if (isResting) restEndTime += a * 1000; updateTimerDisplays(); }
+function resetRestTimer() { pauseRestTimer(); restRemainingSeconds = currentPresetSeconds; updateTimerDisplays(); }
+function toggleRestTimer() { if (isResting) pauseRestTimer(); else startRestTimer(); }
+function pauseRestTimer() { isResting = false; clearInterval(restTimerInterval); if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null); updateTimerDisplays(); }
 async function startRestTimer() {
-  if (restRemainingSeconds <= 0) return; 
-  isResting = true;
-  restEndTime = Date.now() + (restRemainingSeconds * 1000);
-  
-  if (!isTotalTimerRunning) {
-    isTotalTimerRunning = true;
-    totalStartTime = Date.now() - (totalSeconds * 1000);
-    totalTimerInterval = setInterval(() => {
-      totalSeconds = Math.floor((Date.now() - totalStartTime) / 1000);
-      document.getElementById("floating-total-time").innerText = formatTime(totalSeconds);
-    }, 1000);
-  }
-  
+  if (restRemainingSeconds <= 0) return; isResting = true; restEndTime = Date.now() + (restRemainingSeconds * 1000);
+  if (!isTotalTimerRunning) { isTotalTimerRunning = true; totalStartTime = Date.now() - (totalSeconds * 1000); totalTimerInterval = setInterval(() => { totalSeconds = Math.floor((Date.now() - totalStartTime) / 1000); document.getElementById("floating-total-time").innerText = formatTime(totalSeconds); }, 1000); }
   try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
   updateTimerDisplays();
-  
   restTimerInterval = setInterval(() => {
-    let remaining = Math.ceil((restEndTime - Date.now()) / 1000);
-    if (remaining > 0) {
-      restRemainingSeconds = remaining;
-      updateTimerDisplays();
-    } else {
-      clearInterval(restTimerInterval);
-      isResting = false;
-      restRemainingSeconds = 0;
-      updateTimerDisplays();
+    let rem = Math.ceil((restEndTime - Date.now()) / 1000);
+    if (rem > 0) { restRemainingSeconds = rem; updateTimerDisplays(); } else {
+      clearInterval(restTimerInterval); isResting = false; restRemainingSeconds = 0; updateTimerDisplays();
       if (navigator.vibrate) navigator.vibrate([500, 500, 500, 500, 500, 500, 500, 500, 500]); 
       if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
       setTimeout(() => { resetRestTimer(); }, 1000);
@@ -248,233 +111,87 @@ async function startRestTimer() {
   }, 200);
 }
 
-function openTimerSheet() {
-  document.getElementById('timer-bottom-sheet').classList.add('open');
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  document.getElementById('nav-timer').classList.add('active');
-}
-
+function openTimerSheet() { document.getElementById('timer-bottom-sheet').classList.add('open'); document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active')); document.getElementById('nav-timer').classList.add('active'); }
 function closeTimerSheet() {
-  document.getElementById('timer-bottom-sheet').classList.remove('open');
-  const currentView = getCurrentVisibleView();
-  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-  if (currentView === 'home' || currentView === 'calendar') document.getElementById('nav-home').classList.add('active');
-  if (currentView === 'dashboard' || currentView === 'detail') document.getElementById('nav-log').classList.add('active');
-  if (currentView === 'graph') document.getElementById('nav-graph').classList.add('active');
+  document.getElementById('timer-bottom-sheet').classList.remove('open'); const cV = getCurrentVisibleView(); document.querySelectorAll('.nav-item').forEach(e => e.classList.remove('active'));
+  if (cV === 'home' || cV === 'calendar') document.getElementById('nav-home').classList.add('active'); if (cV === 'dashboard' || cV === 'detail') document.getElementById('nav-log').classList.add('active'); if (cV === 'graph') document.getElementById('nav-graph').classList.add('active');
 }
-
 function initTimerSheetSwipe() {
-  const sheet = document.getElementById('timer-bottom-sheet');
-  if (!sheet) return;
-  let startY = 0;
-
-  sheet.addEventListener('touchstart', (e) => {
-    startY = e.touches[0].clientY;
-  }, { passive: true });
-
-  sheet.addEventListener('touchmove', (e) => {
-    const y = e.touches[0].clientY;
-    if (y > startY) { e.preventDefault(); }
-  }, { passive: false });
-
-  sheet.addEventListener('touchend', (e) => {
-    const y = e.changedTouches[0].clientY;
-    if (y - startY > 60) { closeTimerSheet(); }
-  }, { passive: true });
+  const sh = document.getElementById('timer-bottom-sheet'); if (!sh) return; let sY = 0;
+  sh.addEventListener('touchstart', e => { sY = e.touches[0].clientY; }, { passive: true });
+  sh.addEventListener('touchmove', e => { if (e.touches[0].clientY > sY) { e.preventDefault(); } }, { passive: false });
+  sh.addEventListener('touchend', e => { if (e.changedTouches[0].clientY - sY > 60) closeTimerSheet(); }, { passive: true });
 }
-
-function makeDraggable(element) {
-  if(!element) return;
-  let startX = 0, startY = 0, initialX = 0, initialY = 0;
-  element.addEventListener('touchstart', dragStart, {passive: false});
-  element.addEventListener('touchmove', drag, {passive: false});
-
-  function dragStart(e) {
-    if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button') || e.target.tagName.toLowerCase() === 'svg') return; 
-    initialX = element.getBoundingClientRect().left;
-    initialY = element.getBoundingClientRect().top;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-  }
-  function drag(e) {
+function makeDraggable(el) {
+  if(!el) return; let sX=0, sY=0, iX=0, iY=0;
+  el.addEventListener('touchstart', e => { if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button') || e.target.tagName.toLowerCase() === 'svg') return; iX = el.getBoundingClientRect().left; iY = el.getBoundingClientRect().top; sX = e.touches[0].clientX; sY = e.touches[0].clientY; }, {passive: false});
+  el.addEventListener('touchmove', e => {
     if (e.target.tagName.toLowerCase() === 'button' || e.target.closest('button') || e.target.tagName.toLowerCase() === 'svg') return;
-    e.preventDefault(); 
-    let dx = e.touches[0].clientX - startX;
-    let dy = e.touches[0].clientY - startY;
-    let newLeft = initialX + dx;
-    let newTop = initialY + dy;
-    newLeft = Math.max(0, Math.min(newLeft, window.innerWidth - element.offsetWidth));
-    newTop = Math.max(0, Math.min(newTop, window.innerHeight - element.offsetHeight));
-    element.style.left = newLeft + 'px';
-    element.style.top = newTop + 'px';
-    element.style.bottom = 'auto'; 
-    element.style.right = 'auto';
-  }
+    e.preventDefault(); let nL = Math.max(0, Math.min(iX + (e.touches[0].clientX - sX), window.innerWidth - el.offsetWidth)); let nT = Math.max(0, Math.min(iY + (e.touches[0].clientY - sY), window.innerHeight - el.offsetHeight));
+    el.style.left = nL + 'px'; el.style.top = nT + 'px'; el.style.bottom = 'auto'; el.style.right = 'auto';
+  }, {passive: false});
 }
 
 /* ======================================================================
-   Alpine.jsによるフォーム ＆ 履歴ポップアップ管理
+   Alpine.js フォーム
 ====================================================================== */
 document.addEventListener('alpine:init', () => {
   Alpine.data('workoutForm', () => ({
-    formPart: '',
-    formPartCustom: '',
-    formExercises: [],
-    hasDraft: false,
-    isSaving: false,
-    saveMsg: '',
-    saveMsgColor: '',
-
-    historyModal: { isOpen: false, exercise: '', records: [] },
-
+    formPart: '', formPartCustom: '', formExercises: [], hasDraft: false, isSaving: false, saveMsg: '', saveMsgColor: '', historyModal: { isOpen: false, exercise: '', records: [] },
     init() { window.alpineWorkoutForm = this; },
-
     addExercise(existingData = null) {
-      const emptySets = Array.from({ length: 5 }, () => ({ w: '', r: '' }));
-      if (existingData) { this.formExercises.push({ name: existingData.name, memo: existingData.memo, sets: existingData.sets, suggests: [] }); } 
-      else { this.formExercises.push({ name: '', memo: '', sets: emptySets, suggests: [] }); }
+      const eS = Array.from({ length: 5 }, () => ({ w: '', r: '' }));
+      if (existingData) { this.formExercises.push({ name: existingData.name, memo: existingData.memo, sets: existingData.sets, suggests: [] }); } else { this.formExercises.push({ name: '', memo: '', sets: eS, suggests: [] }); }
       this.saveDraft();
     },
     removeExercise(idx) { this.formExercises.splice(idx, 1); this.saveDraft(); },
-
     suggest(idx) {
-      const val = this.formExercises[idx].name.trim().toLowerCase();
-      if (!val) { this.formExercises[idx].suggests = []; return; }
-      const currentPart = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart;
-      const exMap = new Map();
-      globalTrainingHistory.forEach(r => {
-        const ex = (r.exercise || "").trim();
-        if (!ex || ex === "種目不明") return;
-        if (ex.toLowerCase().includes(val) && ex.toLowerCase() !== val) {
-          if (!exMap.has(ex) || r.part === currentPart) exMap.set(ex, r.part || "");
-        }
-      });
-      this.formExercises[idx].suggests = Array.from(exMap.entries())
-        .sort((a, b) => (currentPart && a[1] === currentPart ? -1 : 1) - (currentPart && b[1] === currentPart ? -1 : 1))
-        .slice(0, 5).map(([name, part]) => ({ name, part }));
+      const val = this.formExercises[idx].name.trim().toLowerCase(); if (!val) { this.formExercises[idx].suggests = []; return; }
+      const cP = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart; const exMap = new Map();
+      globalTrainingHistory.forEach(r => { const ex = (r.exercise || "").trim(); if (!ex || ex === "種目不明") return; if (ex.toLowerCase().includes(val) && ex.toLowerCase() !== val) { if (!exMap.has(ex) || r.part === cP) exMap.set(ex, r.part || ""); } });
+      this.formExercises[idx].suggests = Array.from(exMap.entries()).sort((a, b) => (cP && a[1] === cP ? -1 : 1) - (cP && b[1] === cP ? -1 : 1)).slice(0, 5).map(([name, part]) => ({ name, part }));
     },
     selectSuggest(idx, name) { this.formExercises[idx].name = name; this.formExercises[idx].suggests = []; this.saveDraft(); },
-
     openHistory(exName) {
-      const name = exName.trim(); if (!name) return;
-      this.historyModal.exercise = name;
-      const records = globalTrainingHistory
-        .filter(r => (r.exercise || "").trim() === name)
-        .sort((a, b) => new Date(normalizeDateStr(b.date)) - new Date(normalizeDateStr(a.date)))
-        .map(r => {
-          const dObj = parseDateKeyToObj(r.date);
-          return { dateStr: `${dObj.getFullYear()}/${dObj.getMonth()+1}/${dObj.getDate()}(${DAY_LABELS_SHORT[dObj.getDay()]})`, details: r.details, memo: r.memo };
-        });
+      const name = exName.trim(); if (!name) return; this.historyModal.exercise = name;
+      const records = globalTrainingHistory.filter(r => (r.exercise || "").trim() === name).sort((a, b) => new Date(normalizeDateStr(b.date)) - new Date(normalizeDateStr(a.date))).map(r => { const dObj = parseDateKeyToObj(r.date); return { dateStr: `${dObj.getFullYear()}/${dObj.getMonth()+1}/${dObj.getDate()}(${DAY_LABELS_SHORT[dObj.getDay()]})`, details: r.details, memo: r.memo }; });
       this.historyModal.records = records; this.historyModal.isOpen = true;
     },
-
-    saveDraft() {
-      if (!currentRecordingDateStr) return;
-      localStorage.setItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(currentRecordingDateStr), JSON.stringify({ part: this.formPart, partCustom: this.formPartCustom, exercises: this.formExercises }));
-      this.hasDraft = true;
-    },
-    
+    saveDraft() { if (!currentRecordingDateStr) return; localStorage.setItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(currentRecordingDateStr), JSON.stringify({ part: this.formPart, partCustom: this.formPartCustom, exercises: this.formExercises })); this.hasDraft = true; },
     loadDraftAndRecords(dateStr) {
       this.formPart = ''; this.formPartCustom = ''; this.formExercises = []; this.hasDraft = false; this.saveMsg = '';
-      const draftRaw = localStorage.getItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(dateStr));
-      if (draftRaw) {
-        const draft = JSON.parse(draftRaw);
-        this.formPart = draft.part || ''; this.formPartCustom = draft.partCustom || '';
-        if (draft.exercises && draft.exercises.length > 0) { draft.exercises.forEach(e => this.addExercise(e)); } else { this.addExercise(); }
-        this.hasDraft = true; return;
-      }
-      const records = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === normalizeDateStr(dateStr));
-      if (records.length === 0) { this.addExercise(); } else {
-        let pt = records[0].part || ''; if (pt === "足") pt = "脚";
-        if (["胸", "背中", "腕", "肩", "脚"].includes(pt)) { this.formPart = pt; } else { this.formPart = 'custom'; this.formPartCustom = pt; }
-        records.forEach(r => {
-          const sets = Array.from({ length: 5 }, () => ({ w: '', r: '' }));
-          const parsed = parseDetailsToSets(r.details);
-          parsed.forEach((s, i) => { if (i < 5) { sets[i].w = s.w; sets[i].r = s.r; } });
-          this.addExercise({ name: r.exercise, memo: r.memo, sets: sets });
-        });
+      const dR = localStorage.getItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(dateStr));
+      if (dR) { const d = JSON.parse(dR); this.formPart = d.part || ''; this.formPartCustom = d.partCustom || ''; if (d.exercises && d.exercises.length > 0) { d.exercises.forEach(e => this.addExercise(e)); } else { this.addExercise(); } this.hasDraft = true; return; }
+      const rs = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === normalizeDateStr(dateStr));
+      if (rs.length === 0) { this.addExercise(); } else {
+        let pt = rs[0].part || ''; if (pt === "足") pt = "脚"; if (["胸", "背中", "腕", "肩", "脚"].includes(pt)) { this.formPart = pt; } else { this.formPart = 'custom'; this.formPartCustom = pt; }
+        rs.forEach(r => { const sets = Array.from({ length: 5 }, () => ({ w: '', r: '' })); const parsed = parseDetailsToSets(r.details); parsed.forEach((s, i) => { if (i < 5) { sets[i].w = s.w; sets[i].r = s.r; } }); this.addExercise({ name: r.exercise, memo: r.memo, sets: sets }); });
       }
     },
-
-    // ★保存処理（オフライン対応版）
     saveTraining() {
-      const targetDate = currentRecordingDateStr || formatWithZeroPad(formatDateKey(new Date()));
-      const globalPart = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart;
-      
-      if (!globalPart) { this.saveMsg = "部位を選択してください"; this.saveMsgColor = "#FF453A"; return; }
-
-      const trainingData = [];
+      const tD = currentRecordingDateStr || formatWithZeroPad(formatDateKey(new Date())); const gP = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart;
+      if (!gP) { this.saveMsg = "部位を選択してください"; this.saveMsgColor = "#FF453A"; return; }
+      const tData = [];
       this.formExercises.forEach(ex => {
-        const name = ex.name.trim(); const memo = ex.memo.trim();
-        let setsText = ""; let hasSets = false;
-        ex.sets.forEach((s, i) => {
-          const w = String(s.w).trim(); const r = String(s.r).trim();
-          if (w || r) { setsText += `${i+1}セット目: ${w ? w+'kg' : '-'} × ${r ? r+'回' : '-'}\n`; hasSets = true; }
-        });
-        setsText = setsText.trim();
-        if (name || hasSets || memo) { trainingData.push({ date: targetDate, part: globalPart, exercise: name || "種目不明", details: setsText, memo: memo }); }
+        const n = ex.name.trim(); const m = ex.memo.trim(); let sT = ""; let hS = false;
+        ex.sets.forEach((s, i) => { const w = String(s.w).trim(); const r = String(s.r).trim(); if (w || r) { sT += `${i+1}セット目: ${w ? w+'kg' : '-'} × ${r ? r+'回' : '-'}\n`; hS = true; } });
+        if (n || hS || m) { tData.push({ date: tD, part: gP, exercise: n || "種目不明", details: sT.trim(), memo: m }); }
       });
-
-      if (trainingData.length === 0) { this.saveMsg = "内容を入力してください"; this.saveMsgColor = "#FF453A"; return; }
-
+      if (tData.length === 0) { this.saveMsg = "内容を入力してください"; this.saveMsgColor = "#FF453A"; return; }
       this.isSaving = true; this.saveMsg = ""; showSavingOverlay();
-
-      const payload = { action: 'saveTrainingLog', targetDate: targetDate, trainingData: trainingData, token: API_TOKEN };
-
-      const finishAndClear = (updatedHistory) => {
-        if (updatedHistory) globalTrainingHistory = updatedHistory;
-        localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(targetDate));
-        this.hasDraft = false;
-        finishSavingOverlay(() => { openHomeView(); });
+      const payload = { action: 'saveTrainingLog', targetDate: tD, trainingData: tData, token: API_TOKEN };
+      const fin = (uH) => { if (uH) globalTrainingHistory = uH; localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(tD)); this.hasDraft = false; finishSavingOverlay(() => { openHomeView(); }); };
+      const saveOff = () => {
+        const qR = localStorage.getItem(OFFLINE_QUEUE_KEY); let q = qR ? JSON.parse(qR) : []; q.push({ id: Date.now(), payload: payload }); localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q));
+        globalTrainingHistory = globalTrainingHistory.filter(r => normalizeDateStr(r.date) !== normalizeDateStr(tD)); tData.forEach(d => globalTrainingHistory.push(d));
+        const cR = localStorage.getItem(DATA_CACHE_KEY); if (cR) { let cD = JSON.parse(cR); cD.trainingHistory = globalTrainingHistory; localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cD)); }
+        document.getElementById("saving-text").innerText = "オフライン保存しました"; setTimeout(() => { this.isSaving = false; fin(null); }, 1200);
       };
-
-      // オフライン・エラー時の一時保存ロジック
-      const saveToOfflineQueue = () => {
-        const queueRaw = localStorage.getItem(OFFLINE_QUEUE_KEY);
-        let queue = queueRaw ? JSON.parse(queueRaw) : [];
-        queue.push({ id: Date.now(), payload: payload });
-        localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue));
-        
-        // ローカルでの表示を即座に更新する
-        globalTrainingHistory = globalTrainingHistory.filter(r => normalizeDateStr(r.date) !== normalizeDateStr(targetDate));
-        trainingData.forEach(d => globalTrainingHistory.push(d));
-
-        const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
-        if (cachedRaw) {
-           let cData = JSON.parse(cachedRaw);
-           cData.trainingHistory = globalTrainingHistory;
-           localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cData));
-        }
-
-        document.getElementById("saving-text").innerText = "オフライン保存しました";
-        setTimeout(() => {
-          this.isSaving = false;
-          finishAndClear(null);
-        }, 1200);
-      };
-
-      // 完全にオフラインなら即座に一時保存
-      if (!navigator.onLine) {
-        saveToOfflineQueue();
-        return;
-      }
-
-      fetch(GAS_URL, {
-        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
-      })
-      .then(res => res.json())
-      .then(result => {
-        this.isSaving = false;
-        if (result.success) { finishAndClear(result.updatedHistory); } 
-        else { hideSavingOverlayImmediate(); this.saveMsg = "エラー: " + result.error; this.saveMsgColor = "#FF453A"; }
-      })
-      .catch(err => { 
-        // 途中で電波が途切れた場合もオフラインキューに逃がす
-        saveToOfflineQueue();
-      });
+      if (!navigator.onLine) { saveOff(); return; }
+      fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) })
+      .then(res => res.json()).then(r => { this.isSaving = false; if (r.success) { fin(r.updatedHistory); } else { hideSavingOverlayImmediate(); this.saveMsg = "エラー: " + r.error; this.saveMsgColor = "#FF453A"; } })
+      .catch(e => { saveOff(); });
     },
-
     adjustTextarea(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
   }));
 });
@@ -483,231 +200,93 @@ document.addEventListener('alpine:init', () => {
    既存のデータ取得・UI管理用ロジック
 ====================================================================== */
 function initApp(data) {
-  // ★強制非表示処理：どんな状態でも一度読み込み中文字を消す
   document.getElementById("loading").style.display = "none";
-  
   if (data) {
-    globalTrainingHistory = data.trainingHistory || [];
-    globalHealthMap = {};
-    if (data.healthHistory && data.healthHistory.length > 0) {
-      data.healthHistory.forEach(item => { if (item && item.date) globalHealthMap[normalizeDateStr(item.date)] = item; });
-    } else if (data.currentData && data.currentData.date) {
-      globalHealthMap[normalizeDateStr(data.currentData.date)] = data.currentData;
-    }
+    globalTrainingHistory = data.trainingHistory || []; globalHealthMap = {};
+    if (data.healthHistory && data.healthHistory.length > 0) { data.healthHistory.forEach(item => { if (item && item.date) globalHealthMap[normalizeDateStr(item.date)] = item; }); } else if (data.currentData && data.currentData.date) { globalHealthMap[normalizeDateStr(data.currentData.date)] = data.currentData; }
   }
-  
-  // ★更新時：今開いている画面だけを静かに再描画する
-  if (!window.isAppInitialized) {
-    window.isAppInitialized = true;
-    restoreLastViewState();
-  } else {
-    const currentView = getCurrentVisibleView();
-    if (currentView === 'home') { renderHomeCalendar(); renderWeeklySummary(); }
-    else if (currentView === 'calendar') { renderDetailCalendar(); }
-    else if (currentView === 'dashboard') { if (window.alpineWorkoutForm) window.alpineWorkoutForm.loadDraftAndRecords(currentRecordingDateStr); }
-    else if (currentView === 'detail') { openDayDetailView(currentDetailDateKey, document.getElementById("day-detail-title").innerText, null, null, true); }
-    else if (currentView === 'graph') { initGraphView(); }
+  if (!window.isAppInitialized) { window.isAppInitialized = true; restoreLastViewState(); } else {
+    const cV = getCurrentVisibleView();
+    if (cV === 'home') { renderHomeCalendar(); renderWeeklySummary(); } else if (cV === 'calendar') { renderDetailCalendar(); } else if (cV === 'dashboard') { if (window.alpineWorkoutForm) window.alpineWorkoutForm.loadDraftAndRecords(currentRecordingDateStr); } else if (cV === 'detail') { openDayDetailView(currentDetailDateKey, document.getElementById("day-detail-title").innerText, null, null, true); } else if (cV === 'graph') { initGraphView(); }
   }
 }
-
-function initBrowserHistoryGuard() {
-  try {
-    window.history.replaceState({ view: 'root_guard' }, ''); window.history.pushState({ view: 'home' }, '');
-    window.addEventListener('popstate', function(e) {
-      const state = e.state;
-      if (!state || state.view === 'root_guard') { window.history.pushState({ view: 'home' }, ''); openHomeView(true); return; }
-      applyStateFromHistory(state);
-    });
-  } catch (err) {}
-}
-
-function pushAppHistory(stateObj) {
-  try { stateObj.timestamp = Date.now(); localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(stateObj)); window.history.pushState(stateObj, ''); } catch (e) {}
-}
-
-function navigateBack() {
-  const currentView = getCurrentVisibleView();
-  if (currentView === 'detail') { if (previousViewBeforeDetail === 'calendar') openCalendarDetailView(); else openHomeView(); } else openHomeView();
-}
-
-function getCurrentVisibleView() {
-  if (document.getElementById("view-dashboard").style.display === "block") return 'dashboard';
-  if (document.getElementById("view-day-detail").style.display === "block") return 'detail';
-  if (document.getElementById("view-calendar").style.display === "block") return 'calendar';
-  if (document.getElementById("view-graph").style.display === "block") return 'graph';
-  return 'home';
-}
-
-function applyStateFromHistory(state) {
-  if (!state || state.view === 'home') openHomeView(true);
-  else if (state.view === 'calendar') { currentCalYear = state.year; currentCalMonth = state.month; openCalendarDetailView(true); }
-  else if (state.view === 'detail') openDayDetailView(state.dateKey, state.label, state.fromView || 'home', null, true);
-  else if (state.view === 'dashboard') openDashboardForDate(state.dateKey || null, true);
-  else if (state.view === 'graph') switchTab('graph');
-  else openHomeView(true);
-}
-
-function restoreLastViewState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_VIEW_KEY);
-    if (!raw) { openHomeView(); return; }
-    const saved = JSON.parse(raw);
-    if (saved.timestamp && (Date.now() - saved.timestamp > 3600000)) { openHomeView(); return; }
-    if (saved && saved.view && saved.view !== 'home') { applyStateFromHistory(saved); return; }
-  } catch (e) {}
-  openHomeView();
-}
-
-// ★メニュー押下時の強制ローディング非表示を追加
-function hideAllViews() {
-  document.getElementById("loading").style.display = "none";
-  ['view-home','view-calendar','view-day-detail','view-dashboard','view-graph'].forEach(id => document.getElementById(id).style.display = "none");
-  ['nav-home','nav-log','nav-graph','nav-timer'].forEach(id => document.getElementById(id).classList.remove("active"));
-}
-
-function openHomeView(skipHistory) {
-  hideAllViews(); document.getElementById("view-home").style.display = "block"; document.getElementById("nav-home").classList.add("active");
-  const now = new Date(); currentCalYear = now.getFullYear(); currentCalMonth = now.getMonth();
-  renderHomeCalendar(); renderWeeklySummary();
-  if (!skipHistory) pushAppHistory({ view: 'home' }); else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'home', timestamp: Date.now() })); } catch(e){} }
-  window.scrollTo(0, 0);
-}
-
-function openCalendarDetailView(skipHistory) {
-  hideAllViews(); document.getElementById("view-calendar").style.display = "block"; renderDetailCalendar();
-  if (!skipHistory) pushAppHistory({ view: 'calendar', year: currentCalYear, month: currentCalMonth }); else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'calendar', year: currentCalYear, month: currentCalMonth, timestamp: Date.now() })); } catch(e){} }
-  window.scrollTo(0, 0);
-}
-
-function openDashboardForDate(targetDateKey, skipHistory) {
+function initBrowserHistoryGuard() { try { window.history.replaceState({ view: 'root_guard' }, ''); window.history.pushState({ view: 'home' }, ''); window.addEventListener('popstate', function(e) { const state = e.state; if (!state || state.view === 'root_guard') { window.history.pushState({ view: 'home' }, ''); openHomeView(true); return; } applyStateFromHistory(state); }); } catch (err) {} }
+function pushAppHistory(s) { try { s.timestamp = Date.now(); localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(s)); window.history.pushState(s, ''); } catch (e) {} }
+function navigateBack() { const cV = getCurrentVisibleView(); if (cV === 'detail') { if (previousViewBeforeDetail === 'calendar') openCalendarDetailView(); else openHomeView(); } else openHomeView(); }
+function getCurrentVisibleView() { if (document.getElementById("view-dashboard").style.display === "block") return 'dashboard'; if (document.getElementById("view-day-detail").style.display === "block") return 'detail'; if (document.getElementById("view-calendar").style.display === "block") return 'calendar'; if (document.getElementById("view-graph").style.display === "block") return 'graph'; return 'home'; }
+function applyStateFromHistory(s) { if (!s || s.view === 'home') openHomeView(true); else if (s.view === 'calendar') { currentCalYear = s.year; currentCalMonth = s.month; openCalendarDetailView(true); } else if (s.view === 'detail') openDayDetailView(s.dateKey, s.label, s.fromView || 'home', null, true); else if (s.view === 'dashboard') openDashboardForDate(s.dateKey || null, true); else if (s.view === 'graph') switchTab('graph'); else openHomeView(true); }
+function restoreLastViewState() { try { const r = localStorage.getItem(STORAGE_VIEW_KEY); if (!r) { openHomeView(); return; } const s = JSON.parse(r); if (s.timestamp && (Date.now() - s.timestamp > 3600000)) { openHomeView(); return; } if (s && s.view && s.view !== 'home') { applyStateFromHistory(s); return; } } catch (e) {} openHomeView(); }
+function hideAllViews() { document.getElementById("loading").style.display = "none"; ['view-home','view-calendar','view-day-detail','view-dashboard','view-graph'].forEach(id => document.getElementById(id).style.display = "none"); ['nav-home','nav-log','nav-graph','nav-timer'].forEach(id => document.getElementById(id).classList.remove("active")); }
+function openHomeView(sH) { hideAllViews(); document.getElementById("view-home").style.display = "block"; document.getElementById("nav-home").classList.add("active"); const now = new Date(); currentCalYear = now.getFullYear(); currentCalMonth = now.getMonth(); renderHomeCalendar(); renderWeeklySummary(); if (!sH) pushAppHistory({ view: 'home' }); else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'home', timestamp: Date.now() })); } catch(e){} } window.scrollTo(0, 0); }
+function openCalendarDetailView(sH) { hideAllViews(); document.getElementById("view-calendar").style.display = "block"; renderDetailCalendar(); if (!sH) pushAppHistory({ view: 'calendar', year: currentCalYear, month: currentCalMonth }); else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'calendar', year: currentCalYear, month: currentCalMonth, timestamp: Date.now() })); } catch(e){} } window.scrollTo(0, 0); }
+function openDashboardForDate(tK, sH) {
   hideAllViews(); document.getElementById("view-dashboard").style.display = "block"; document.getElementById("nav-log").classList.add("active");
-  
-  let recordDateObj = targetDateKey ? parseDateKeyToObj(targetDateKey) : new Date();
-  currentRecordingDateStr = formatWithZeroPad(formatDateKey(recordDateObj));
-  document.getElementById("recording-target-label").innerText = `${formatDisplayDateWithDay(currentRecordingDateStr)} の記録`;
-  
-  const prevDateObj = new Date(recordDateObj.getFullYear(), recordDateObj.getMonth(), recordDateObj.getDate() - 1);
-  document.getElementById("form-vitals-caption").innerText = `前日 ${prevDateObj.getMonth() + 1}/${prevDateObj.getDate()} (${DAY_LABELS_SHORT[prevDateObj.getDay()]}) のコンディション`;
-
-  loadHealthDataIntoPrefix(formatDateKey(prevDateObj), "");
-  if (window.alpineWorkoutForm) window.alpineWorkoutForm.loadDraftAndRecords(currentRecordingDateStr);
-
-  if (!skipHistory) pushAppHistory({ view: 'dashboard', dateKey: currentRecordingDateStr });
-  else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'dashboard', dateKey: currentRecordingDateStr, timestamp: Date.now() })); } catch(e){} }
-  window.scrollTo(0, 0);
+  let dO = tK ? parseDateKeyToObj(tK) : new Date(); currentRecordingDateStr = formatWithZeroPad(formatDateKey(dO)); document.getElementById("recording-target-label").innerText = `${formatDisplayDateWithDay(currentRecordingDateStr)} の記録`;
+  const pO = new Date(dO.getFullYear(), dO.getMonth(), dO.getDate() - 1); document.getElementById("form-vitals-caption").innerText = `前日 ${pO.getMonth() + 1}/${pO.getDate()} (${DAY_LABELS_SHORT[pO.getDay()]}) のコンディション`;
+  loadHealthDataIntoPrefix(formatDateKey(pO), ""); if (window.alpineWorkoutForm) window.alpineWorkoutForm.loadDraftAndRecords(currentRecordingDateStr);
+  if (!sH) pushAppHistory({ view: 'dashboard', dateKey: currentRecordingDateStr }); else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({ view: 'dashboard', dateKey: currentRecordingDateStr, timestamp: Date.now() })); } catch(e){} } window.scrollTo(0, 0);
 }
-
-function loadHealthDataIntoPrefix(dateKey, prefix) {
-  const normalized = normalizeDateStr(dateKey);
-  if (globalHealthMap[normalized]) { renderVitalsToDOM(globalHealthMap[normalized], prefix); }
-  else {
-    renderVitalsToDOM(null, prefix);
-    fetch(GAS_URL + '?action=getDataForDate&date=' + formatWithZeroPad(normalized) + '&token=' + API_TOKEN)
-      .then(res => res.json()).then(data => { if (data && !data.error) { globalHealthMap[normalized] = data; renderVitalsToDOM(data, prefix); } }).catch(()=>{});
-  }
-}
-
-function renderVitalsToDOM(data, p) {
-  document.getElementById(p+"sleep-time").innerText = cleanMetric(data?.sleep, ""); document.getElementById(p+"cal-intake").innerText = cleanMetric(data?.intake, "");
-  document.getElementById(p+"cal-burned").innerText = cleanMetric(data?.burned, ""); document.getElementById(p+"p-val").innerText = cleanMetric(data?.protein, "");
-  document.getElementById(p+"f-val").innerText = cleanMetric(data?.fat, ""); document.getElementById(p+"c-val").innerText = cleanMetric(data?.carb, "");
-  const diff = data ? parseInt(String(data.balance).replace(/[^-0-9]/g, ""), 10) : NaN;
-  document.getElementById(p+"cal-balance").innerText = isNaN(diff) ? "" : (diff > 0 ? "+" : "") + diff.toLocaleString() + " kcal";
-}
-
-function openDayDetailView(dateKey, displayLabel, fromView, slideClass, skipHistory) {
-  if (fromView) previousViewBeforeDetail = fromView;
-  currentDetailDateKey = normalizeDateStr(dateKey);
-  hideAllViews(); const viewEl = document.getElementById("view-day-detail"); viewEl.style.display = "block";
-  if (slideClass) { viewEl.classList.remove("slide-anim-from-right", "slide-anim-from-left"); void viewEl.offsetWidth; viewEl.classList.add(slideClass); }
-  document.getElementById("day-detail-title").innerText = displayLabel || formatDisplayDateWithDay(currentDetailDateKey);
-  loadHealthDataIntoPrefix(currentDetailDateKey, "detail-");
-
-  const summary = document.getElementById("day-summary-container"); const content = document.getElementById("day-detail-content"); const btn = document.getElementById("day-detail-edit-btn");
-  summary.innerHTML = ""; content.innerHTML = "";
-
-  const records = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === currentDetailDateKey);
-  if (records.length === 0) {
-    summary.style.display = "none"; content.innerHTML = `<div class="empty-state"><div class="empty-state-title">トレーニング記録がありません</div></div>`; btn.innerText = "この日のワークアウトを記録";
-  } else {
-    btn.innerText = "この日の記録を編集・追加";
-    const parts = [...new Set(records.map(r => r.part || "未指定"))].join("・") + "の日";
-    let vol = 0, sets = 0;
-    records.forEach(r => { const ps = parseDetailsToSets(r.details); sets += ps.length; ps.forEach(s => { vol += (parseFloat(s.w)||0) * (parseFloat(s.r)||0); }); });
-    
-    summary.style.display = "block";
-    summary.innerHTML = `<div class="detail-hero"><div><div class="detail-part-Main">${parts}</div><div class="detail-sub-counts">${records.length}種目 ・ 合計 ${sets}セット</div></div><div class="detail-volume-block"><div class="detail-volume-num">${Number.isInteger(vol) ? vol.toLocaleString() : vol.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<span class="detail-volume-kg">kg</span></div><div class="detail-volume-unit">TOTAL VOLUME</div></div></div>`;
-    
-    records.forEach(r => {
-      const c = document.createElement("div"); c.className = "exercise-detail-card";
-      c.innerHTML = `<div class="exercise-detail-name">${r.exercise || "種目未入力"}</div>`;
-      const ps = parseDetailsToSets(r.details);
-      if (ps.length > 0) {
-        const t = document.createElement("div"); t.className = "sets-table";
-        ps.forEach((s, i) => { t.innerHTML += `<div class="set-line"><span class="set-line-idx">SET ${i+1}</span><span class="set-line-val">${s.w !== '' ? s.w+'<span class="set-line-unit">kg</span>' : '-'} × ${s.r !== '' ? s.r+'<span class="set-line-unit">回</span>' : '-'}</span></div>`; });
-        c.appendChild(t);
-      } else if (r.details) { c.innerHTML += `<div style="font-size:0.9rem; color:var(--text-secondary); white-space:pre-wrap;">${r.details}</div>`; }
-      if (r.memo) c.innerHTML += `<div class="exercise-detail-memo">${r.memo}</div>`;
-      content.appendChild(c);
+function loadHealthDataIntoPrefix(dK, p) { const n = normalizeDateStr(dK); if (globalHealthMap[n]) { renderVitalsToDOM(globalHealthMap[n], p); } else { renderVitalsToDOM(null, p); fetch(GAS_URL + '?action=getDataForDate&date=' + formatWithZeroPad(n) + '&token=' + API_TOKEN).then(res => res.json()).then(data => { if (data && !data.error) { globalHealthMap[n] = data; renderVitalsToDOM(data, p); } }).catch(()=>{}); } }
+function renderVitalsToDOM(data, p) { document.getElementById(p+"sleep-time").innerText = cleanMetric(data?.sleep, ""); document.getElementById(p+"cal-intake").innerText = cleanMetric(data?.intake, ""); document.getElementById(p+"cal-burned").innerText = cleanMetric(data?.burned, ""); document.getElementById(p+"p-val").innerText = cleanMetric(data?.protein, ""); document.getElementById(p+"f-val").innerText = cleanMetric(data?.fat, ""); document.getElementById(p+"c-val").innerText = cleanMetric(data?.carb, ""); const d = data ? parseInt(String(data.balance).replace(/[^-0-9]/g, ""), 10) : NaN; document.getElementById(p+"cal-balance").innerText = isNaN(d) ? "" : (d > 0 ? "+" : "") + d.toLocaleString() + " kcal"; }
+function openDayDetailView(dK, dL, fV, sC, sH) {
+  if (fV) previousViewBeforeDetail = fV; currentDetailDateKey = normalizeDateStr(dK); hideAllViews(); const v = document.getElementById("view-day-detail"); v.style.display = "block";
+  if (sC) { v.classList.remove("slide-anim-from-right", "slide-anim-from-left"); void v.offsetWidth; v.classList.add(sC); }
+  document.getElementById("day-detail-title").innerText = dL || formatDisplayDateWithDay(currentDetailDateKey); loadHealthDataIntoPrefix(currentDetailDateKey, "detail-");
+  const s = document.getElementById("day-summary-container"), c = document.getElementById("day-detail-content"), b = document.getElementById("day-detail-edit-btn"); s.innerHTML = ""; c.innerHTML = "";
+  const rs = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === currentDetailDateKey);
+  if (rs.length === 0) { s.style.display = "none"; c.innerHTML = `<div class="empty-state"><div class="empty-state-title">トレーニング記録がありません</div></div>`; b.innerText = "この日のワークアウトを記録"; } else {
+    b.innerText = "この日の記録を編集・追加"; const pts = [...new Set(rs.map(r => r.part || "未指定"))].join("・") + "の日"; let vol = 0, sets = 0;
+    rs.forEach(r => { const ps = parseDetailsToSets(r.details); sets += ps.length; ps.forEach(s => { vol += (parseFloat(s.w)||0) * (parseFloat(s.r)||0); }); });
+    s.style.display = "block"; s.innerHTML = `<div class="detail-hero"><div><div class="detail-part-Main">${pts}</div><div class="detail-sub-counts">${rs.length}種目 ・ 合計 ${sets}セット</div></div><div class="detail-volume-block"><div class="detail-volume-num">${Number.isInteger(vol) ? vol.toLocaleString() : vol.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<span class="detail-volume-kg">kg</span></div><div class="detail-volume-unit">TOTAL VOLUME</div></div></div>`;
+    rs.forEach(r => {
+      const dc = document.createElement("div"); dc.className = "exercise-detail-card"; dc.innerHTML = `<div class="exercise-detail-name">${r.exercise || "種目未入力"}</div>`; const ps = parseDetailsToSets(r.details);
+      if (ps.length > 0) { const t = document.createElement("div"); t.className = "sets-table"; ps.forEach((s, i) => { t.innerHTML += `<div class="set-line"><span class="set-line-idx">SET ${i+1}</span><span class="set-line-val">${s.w !== '' ? s.w+'<span class="set-line-unit">kg</span>' : '-'} × ${s.r !== '' ? s.r+'<span class="set-line-unit">回</span>' : '-'}</span></div>`; }); dc.appendChild(t); } else if (r.details) { dc.innerHTML += `<div style="font-size:0.9rem; color:var(--text-secondary); white-space:pre-wrap;">${r.details}</div>`; }
+      if (r.memo) dc.innerHTML += `<div class="exercise-detail-memo">${r.memo}</div>`; c.appendChild(dc);
     });
   }
-  btn.onclick = () => openDashboardForDate(currentDetailDateKey);
-  const stateObj = { view: 'detail', dateKey: currentDetailDateKey, label: document.getElementById("day-detail-title").innerText, fromView: previousViewBeforeDetail };
-  if (!skipHistory && !slideClass) pushAppHistory(stateObj); else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({...stateObj, timestamp: Date.now()})); } catch(e){} }
-  if (!slideClass) window.scrollTo(0, 0);
+  b.onclick = () => openDashboardForDate(currentDetailDateKey); const sO = { view: 'detail', dateKey: currentDetailDateKey, label: document.getElementById("day-detail-title").innerText, fromView: previousViewBeforeDetail };
+  if (!sH && !sC) pushAppHistory(sO); else { try { localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify({...sO, timestamp: Date.now()})); } catch(e){} } if (!sC) window.scrollTo(0, 0);
 }
-
-function shiftDetailDay(offset) {
-  if (!currentDetailDateKey) return;
-  const d = parseDateKeyToObj(currentDetailDateKey);
-  const n = new Date(d.getFullYear(), d.getMonth(), d.getDate() + offset);
-  openDayDetailView(formatDateKey(n), formatDisplayDateWithDay(formatDateKey(n)), null, offset > 0 ? "slide-anim-from-right" : "slide-anim-from-left", true);
-}
-
-function initDetailSwipe() {
-  let sX = 0, sY = 0, isDown = false;
-  const v = document.getElementById("view-day-detail"); if (!v) return;
-  const handle = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftDetailDay(dx > 0 ? -1 : 1); };
-  v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true });
-  v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) handle(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true });
-  v.addEventListener("mousedown", e => { isDown = true; sX = e.clientX; sY = e.clientY; });
-  v.addEventListener("mouseup", e => { if (isDown) { isDown = false; handle(e.clientX - sX, e.clientY - sY); }});
-}
-
+function shiftDetailDay(o) { if (!currentDetailDateKey) return; const d = parseDateKeyToObj(currentDetailDateKey); const n = new Date(d.getFullYear(), d.getMonth(), d.getDate() + o); openDayDetailView(formatDateKey(n), formatDisplayDateWithDay(formatDateKey(n)), null, o > 0 ? "slide-anim-from-right" : "slide-anim-from-left", true); }
+function initDetailSwipe() { let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-day-detail"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftDetailDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }}); }
 function showSavingOverlay() { const o = document.getElementById("saving-overlay"); document.getElementById("saving-spinner").style.display="block"; document.getElementById("saving-check").style.display="none"; document.getElementById("saving-text").innerText="記録を保存中..."; o.classList.add("active"); }
 function finishSavingOverlay(cb) { document.getElementById("saving-spinner").style.display="none"; document.getElementById("saving-check").style.display="flex"; document.getElementById("saving-text").innerText="保存しました"; setTimeout(()=>{ document.getElementById("saving-overlay").classList.remove("active"); if (cb) cb(); }, 450); }
 function hideSavingOverlayImmediate() { document.getElementById("saving-overlay").classList.remove("active"); }
-
-function normalizeDateStr(str) { if (!str) return ""; const n = str.match(/\d+/g); if (n && n.length >= 3) return `${parseInt(n[0],10)}/${parseInt(n[1],10)}/${parseInt(n[2],10)}`; return str.trim(); }
-function parseDateKeyToObj(str) { const n = String(str).match(/\d+/g); if (n && n.length >= 3) return new Date(parseInt(n[0],10), parseInt(n[1],10)-1, parseInt(n[2],10)); return new Date(); }
+function normalizeDateStr(s) { if (!s) return ""; const n = s.match(/\d+/g); if (n && n.length >= 3) return `${parseInt(n[0],10)}/${parseInt(n[1],10)}/${parseInt(n[2],10)}`; return s.trim(); }
+function parseDateKeyToObj(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) return new Date(parseInt(n[0],10), parseInt(n[1],10)-1, parseInt(n[2],10)); return new Date(); }
 function formatDateKey(d) { return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`; }
-function formatWithZeroPad(str) { const n = String(str).match(/\d+/g); if (n && n.length >= 3) return `${n[0]}/${String(parseInt(n[1],10)).padStart(2,'0')}/${String(parseInt(n[2],10)).padStart(2,'0')}`; return str; }
-function formatDisplayDateWithDay(str) { const n = String(str).match(/\d+/g); if (n && n.length >= 3) { const y = parseInt(n[0],10), m = parseInt(n[1],10), d = parseInt(n[2],10); return `${y}/${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')} (${DAY_LABELS_SHORT[new Date(y, m-1, d).getDay()]})`; } return str; }
-function cleanMetric(val, suf) { if (val === undefined || val === null) return ""; const s = String(val).trim(); if (s === "" || s === "-" || s.includes("#") || s === "NaN") return ""; return suf ? `${s} ${suf}` : s; }
-function parseDetailsToSets(str) {
-  if (!str) return [];
-  return str.split('\n').filter(l => l.trim() !== '').map(l => {
-    const m = l.match(/:\s*([0-9.]+|-)(?:kg)?\s*[×xXﾗ]\s*([0-9.]+|-)(?:回)?/);
-    if (m) return { w: m[1] === '-' ? '' : m[1], r: m[2] === '-' ? '' : m[2] };
-    return { w: '', r: '' };
-  });
-}
+function formatWithZeroPad(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) return `${n[0]}/${String(parseInt(n[1],10)).padStart(2,'0')}/${String(parseInt(n[2],10)).padStart(2,'0')}`; return s; }
+function formatDisplayDateWithDay(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) { const y = parseInt(n[0],10), m = parseInt(n[1],10), d = parseInt(n[2],10); return `${y}/${String(m).padStart(2,'0')}/${String(d).padStart(2,'0')} (${DAY_LABELS_SHORT[new Date(y, m-1, d).getDay()]})`; } return s; }
+function cleanMetric(v, suf) { if (v === undefined || v === null) return ""; const s = String(v).trim(); if (s === "" || s === "-" || s.includes("#") || s === "NaN") return ""; return suf ? `${s} ${suf}` : s; }
+function parseDetailsToSets(s) { if (!s) return []; return s.split('\n').filter(l => l.trim() !== '').map(l => { const m = l.match(/:\s*([0-9.]+|-)(?:kg)?\s*[×xXﾗ]\s*([0-9.]+|-)(?:回)?/); if (m) return { w: m[1] === '-' ? '' : m[1], r: m[2] === '-' ? '' : m[2] }; return { w: '', r: '' }; }); }
 
 function updateHomeStats() {
-  if (!globalTrainingHistory) return;
-  const ud = new Set(), md = new Set();
-  globalTrainingHistory.forEach(r => {
-    const dStr = normalizeDateStr(r.date); ud.add(dStr);
-    const d = parseDateKeyToObj(dStr);
-    if (d.getFullYear() === currentCalYear && d.getMonth() === currentCalMonth) md.add(dStr);
-  });
+  if (!globalTrainingHistory) return; const ud = new Set(), md = new Set();
+  globalTrainingHistory.forEach(r => { const dStr = normalizeDateStr(r.date); ud.add(dStr); const d = parseDateKeyToObj(dStr); if (d.getFullYear() === currentCalYear && d.getMonth() === currentCalMonth) md.add(dStr); });
   if(document.getElementById("home-monthly-days")) document.getElementById("home-monthly-days").innerText = md.size;
   if(document.getElementById("home-total-days")) document.getElementById("home-total-days").innerText = ud.size;
+}
+
+// ★追加：カレンダーに色付きドットを出すための関数
+function getDateTrainedParts(dateKey, useFilter) {
+  const records = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === dateKey);
+  let filtered = records;
+  if (useFilter && activeFilters.length > 0) {
+    filtered = records.filter(r => activeFilters.some(f => (r.part||"").includes(f) || (f==="脚" && (r.part||"").includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(r.part))));
+  }
+  const parts = new Set();
+  filtered.forEach(r => {
+    let pt = (r.part || "").trim();
+    if (pt === "足") pt = "脚";
+    if (["胸", "背中", "脚", "肩", "腕"].includes(pt)) parts.add(pt); else parts.add("その他");
+  });
+  return Array.from(parts);
 }
 
 function renderHomeCalendar() { const n = new Date(); buildCalendarGrid(n.getFullYear(), n.getMonth(), "home-cal-title", "home-cal-grid", false); updateHomeStats(); }
 function renderDetailCalendar() { buildCalendarGrid(currentCalYear, currentCalMonth, "detail-cal-title", "detail-cal-grid", true); }
 function changeMonth(o) { currentCalMonth += o; if (currentCalMonth < 0) { currentCalMonth = 11; currentCalYear--; } else if (currentCalMonth > 11) { currentCalMonth = 0; currentCalYear++; } renderDetailCalendar(); }
+
 function buildCalendarGrid(y, m, tId, gId, isD) {
   document.getElementById(tId).innerText = `${MONTH_NAMES[m]} ${y}`;
   const g = document.getElementById(gId); g.innerHTML = "";
@@ -717,8 +296,24 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
   for (let d = 1; d <= dIM; d++) {
     const c = document.createElement("div"); c.className = "cal-cell clickable";
     const dK = `${y}/${m+1}/${d}`; const t = isDateTrained(dK, isD);
+    
+    // ★追加：部位ドットのHTML生成
+    let dotsHtml = '';
+    if (t) {
+      const parts = getDateTrainedParts(dK, isD);
+      if (parts.length > 0) {
+        dotsHtml = '<div class="cal-dots-wrap">';
+        parts.slice(0, 4).forEach(pt => {
+          let color = '#8E8E93';
+          if (pt === '胸') color = '#FF453A'; else if (pt === '背中') color = '#0A84FF'; else if (pt === '脚') color = '#30D158'; else if (pt === '肩') color = '#FF9F0A'; else if (pt === '腕') color = '#BF5AF2';
+          dotsHtml += `<div class="cal-dot" style="background-color: ${color};"></div>`;
+        });
+        dotsHtml += '</div>';
+      }
+    }
+
     const cl = (dK === tK && (!isD || activeFilters.length === 0 || t)) ? "cal-day today" : (t ? "cal-day trained" : "cal-day");
-    c.innerHTML = `<div class="${cl}">${d}</div>`;
+    c.innerHTML = `<div class="${cl}">${d}${dotsHtml}</div>`;
     c.onclick = e => { e.stopPropagation(); if(isD) openDayDetailView(dK, `${y}/${String(m+1).padStart(2,'0')}/${String(d).padStart(2,'0')} (${DAY_LABELS_SHORT[new Date(y,m,d).getDay()]})`, 'calendar'); else openCalendarDetailView(); };
     g.appendChild(c);
   }
@@ -754,7 +349,20 @@ function switchTab(t) {
   window.scrollTo(0, 0);
 }
 
+/* ======================================================================
+   グラフ系（期間切り替え追加）
+====================================================================== */
 let rmChartInstance = null; let volumeChartInstance = null;
+let currentGraphPeriod = 'ALL'; // ★追加：期間状態の保持
+
+// ★追加：期間切り替えボタンの処理
+window.setGraphPeriod = function(period) {
+  currentGraphPeriod = period;
+  document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
+  document.getElementById('period-btn-' + period).classList.add('active');
+  updateGraphs();
+};
+
 function initGraphView() {
   const sel = document.getElementById("graph-exercise-select"); const cV = sel.value;
   const pm = { "胸": new Set(), "背中": new Set(), "脚": new Set(), "肩": new Set(), "腕": new Set(), "その他": new Set() };
@@ -772,12 +380,25 @@ function initGraphView() {
   sel.innerHTML = h;
   if (cV && Array.from(sel.options).some(o => o.value === cV)) { sel.value = cV; updateGraphs(); } else clearGraphs();
 }
+
 function clearGraphs() { if (rmChartInstance) rmChartInstance.destroy(); if (volumeChartInstance) volumeChartInstance.destroy(); }
+
 function updateGraphs() {
   const tE = document.getElementById("graph-exercise-select").value; if (!tE) { clearGraphs(); return; }
-  const rs = globalTrainingHistory.filter(r => r.exercise === tE).sort((a,b) => new Date(normalizeDateStr(a.date)) - new Date(normalizeDateStr(b.date)));
+  
+  let records = globalTrainingHistory.filter(r => r.exercise === tE).sort((a,b) => new Date(normalizeDateStr(a.date)) - new Date(normalizeDateStr(b.date)));
+  
+  // ★追加：期間によるデータのフィルタリング
+  if (currentGraphPeriod !== 'ALL') {
+    const cutoffDate = new Date();
+    if (currentGraphPeriod === '1M') cutoffDate.setMonth(cutoffDate.getMonth() - 1);
+    if (currentGraphPeriod === '3M') cutoffDate.setMonth(cutoffDate.getMonth() - 3);
+    if (currentGraphPeriod === '6M') cutoffDate.setMonth(cutoffDate.getMonth() - 6);
+    records = records.filter(r => new Date(normalizeDateStr(r.date)) >= cutoffDate);
+  }
+
   const lbls = [], rmd = [], vd = [];
-  rs.forEach(r => {
+  records.forEach(r => {
     const dStr = formatDisplayDateWithDay(normalizeDateStr(r.date)).substring(5, 10); 
     const ps = parseDetailsToSets(r.details); let dm = 0, dv = 0;
     ps.forEach(s => {
@@ -788,6 +409,7 @@ function updateGraphs() {
   });
   drawChart('rmChart', '推定1RM (kg)', lbls, rmd, '#FF453A'); drawChart('volumeChart', '総重量 (kg)', lbls, vd, '#0A84FF');
 }
+
 function drawChart(cId, lbl, lbls, d, c) {
   const ctx = document.getElementById(cId).getContext('2d');
   if (cId === 'rmChart' && rmChartInstance) rmChartInstance.destroy(); if (cId === 'volumeChart' && volumeChartInstance) volumeChartInstance.destroy();
