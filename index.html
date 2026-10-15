@@ -9,26 +9,18 @@
   <meta name="apple-mobile-web-app-title" content="ジムメモ">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#000000">
-
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon.png">
-  
   <title>ジムメモ</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <!-- ★追加：魔法のツール Alpine.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;400;500;600;700&family=Oswald:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
   <div id="saving-overlay" class="saving-overlay">
-    <div class="saving-box">
-      <div id="saving-spinner" class="spinner"></div>
-      <div id="saving-check" class="check-icon"></div>
-      <div id="saving-text" class="saving-text">記録を保存中...</div>
-    </div>
+    <div class="saving-box"><div id="saving-spinner" class="spinner"></div><div id="saving-check" class="check-icon"></div><div id="saving-text" class="saving-text">記録を保存中...</div></div>
   </div>
-
   <div class="container">
     <div id="loading">読み込み中...</div>
 
@@ -56,10 +48,7 @@
 
     <!-- 2. カレンダー詳細＆部位フィルター画面 -->
     <div id="view-calendar" style="display: none;">
-      <div class="top-nav">
-        <button class="nav-back" onclick="navigateBack()"> ホーム</button>
-        <div class="cal-nav-btns"><button onclick="changeMonth(-1)"></button><button onclick="changeMonth(1)"></button></div>
-      </div>
+      <div class="top-nav"><button class="nav-back" onclick="navigateBack()"> ホーム</button><div class="cal-nav-btns"><button onclick="changeMonth(-1)"></button><button onclick="changeMonth(1)"></button></div></div>
       <div class="calendar-wrapper">
         <div class="cal-header-row"><h1 class="cal-title" id="detail-cal-title"></h1></div>
         <div class="cal-weekdays"><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div><div>SUN</div></div>
@@ -101,22 +90,16 @@
       <button class="btn-primary" id="day-detail-edit-btn" style="margin-top: 20px;">この日の記録を編集</button>
     </div>
 
-    <!-- ★ココから大改造：Alpine.jsによる軽量化フォーム画面 -->
+    <!-- 4. ワークアウト記録画面 (Alpine.js) -->
     <div id="view-dashboard" style="display: none;" x-data="workoutForm" x-cloak>
       <div class="top-nav">
         <button class="nav-back" onclick="navigateBack()"> 戻る</button>
-        <div class="nav-context-wrap">
-          <span class="draft-badge" x-show="hasDraft" style="display: inline-block;">下書き保存済</span>
-          <span class="nav-context-date" id="recording-target-label"></span>
-        </div>
+        <div class="nav-context-wrap"><span class="draft-badge" x-show="hasDraft" style="display: inline-block;">下書き保存済</span><span class="nav-context-date" id="recording-target-label"></span></div>
       </div>
       <div id="dashboard-content">
         <div class="vitals-card">
           <div class="vitals-card-caption" id="form-vitals-caption">前日のコンディション</div>
-          <div class="vitals-primary-row">
-            <div><div class="vital-metric-label">カロリー収支</div><div class="vital-balance-val" id="cal-balance"></div></div>
-            <div><div class="vital-metric-label" style="text-align: right;">睡眠時間</div><div class="vital-sleep-val" id="sleep-time"></div></div>
-          </div>
+          <div class="vitals-primary-row"><div><div class="vital-metric-label">カロリー収支</div><div class="vital-balance-val" id="cal-balance"></div></div><div><div class="vital-metric-label" style="text-align: right;">睡眠時間</div><div class="vital-sleep-val" id="sleep-time"></div></div></div>
           <div class="vitals-secondary-grid">
             <div class="vital-sub-item"><div class="vital-sub-label">摂取</div><div class="vital-sub-val" id="cal-intake"></div></div>
             <div class="vital-sub-item"><div class="vital-sub-label">消費</div><div class="vital-sub-val" id="cal-burned"></div></div>
@@ -125,91 +108,41 @@
             <div class="vital-sub-item"><div class="vital-sub-label">C</div><div class="vital-sub-val" id="c-val"></div></div>
           </div>
         </div>
-        
         <div class="section-header" style="margin-top: 8px;"><span class="section-label">WORKOUT LOG</span></div>
-        
-        <!-- 部位選択 -->
         <div class="form-card" style="padding: 14px 18px; margin-bottom: 12px;">
-          <select class="select-field" style="font-weight: 600;" x-model="formPart" @change="saveDraft()">
-            <option value="">トレーニング部位を選択...</option>
-            <option value="胸">胸</option><option value="背中">背中</option><option value="腕">腕</option>
-            <option value="肩">肩</option><option value="脚">脚</option><option value="custom">その他（自由記述）</option>
-          </select>
+          <select class="select-field" style="font-weight: 600;" x-model="formPart" @change="saveDraft()"><option value="">トレーニング部位を選択...</option><option value="胸">胸</option><option value="背中">背中</option><option value="腕">腕</option><option value="肩">肩</option><option value="脚">脚</option><option value="custom">その他（自由記述）</option></select>
           <input type="text" class="input-field" placeholder="部位を入力 (例: 胸・三頭筋)" style="margin-top: 10px;" x-show="formPart === 'custom'" x-model="formPartCustom" @input="saveDraft()">
         </div>
-        
-        <!-- 種目リスト（templateタグで自動生成される魔法） -->
         <div>
           <template x-for="(ex, index) in formExercises" :key="index">
             <div class="form-card exercise-row">
-              <div class="form-card-header">
-                <span class="form-card-num" x-text="`EXERCISE ${index + 1}`"></span>
-                <button type="button" class="btn-remove-card" x-show="index > 0" @click="removeExercise(index)">削除</button>
-              </div>
-              
-              <!-- 種目名入力 ＆ 履歴ボタン -->
+              <div class="form-card-header"><span class="form-card-num" x-text="`EXERCISE ${index + 1}`"></span><button type="button" class="btn-remove-card" x-show="index > 0" @click="removeExercise(index)">削除</button></div>
               <div class="input-with-history">
                 <div class="autocomplete-wrapper" style="flex: 1; margin-bottom: 0;">
                   <input type="text" class="input-field" placeholder="種目名を入力" autocomplete="off" x-model="ex.name" @input="suggest(index)" @focus="suggest(index)">
-                  <!-- サジェスト -->
-                  <div class="suggest-box" x-show="ex.suggests.length > 0" style="display:block;">
-                    <template x-for="sg in ex.suggests">
-                      <div class="suggest-item" @click="selectSuggest(index, sg.name)">
-                        <span x-text="sg.name"></span>
-                        <span x-show="sg.part" class="suggest-part-tag" x-text="sg.part"></span>
-                      </div>
-                    </template>
-                  </div>
+                  <div class="suggest-box" x-show="ex.suggests.length > 0" style="display:block;"><template x-for="sg in ex.suggests"><div class="suggest-item" @click="selectSuggest(index, sg.name)"><span x-text="sg.name"></span><span x-show="sg.part" class="suggest-part-tag" x-text="sg.part"></span></div></template></div>
                 </div>
-                <!-- ★新機能：履歴ボタン -->
-                <button type="button" class="btn-history" @click="openHistory(ex.name)" title="過去の記録を見る">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                </button>
+                <button type="button" class="btn-history" @click="openHistory(ex.name)" title="過去の記録を見る"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></button>
               </div>
-              
-              <!-- セット入力 -->
-              <div style="margin-bottom: 10px;">
-                <template x-for="(set, sIndex) in ex.sets">
-                  <div class="set-input-row" x-show="sIndex === 0 || ex.sets[sIndex-1].w !== '' || ex.sets[sIndex-1].r !== '' || set.w !== '' || set.r !== ''">
-                    <span class="set-badge" x-text="`#${sIndex + 1}`"></span>
-                    <div class="unit-input-wrap"><input type="number" step="any" inputmode="decimal" placeholder="0" x-model="set.w" @input="saveDraft()"><span class="unit-suffix">kg</span></div>
-                    <div class="set-multiply">×</div>
-                    <div class="unit-input-wrap"><input type="number" step="1" inputmode="numeric" placeholder="0" x-model="set.r" @input="saveDraft()"><span class="unit-suffix">回</span></div>
-                    <button type="button" class="btn-clear-set" @click="set.w=''; set.r=''; saveDraft();" title="クリア"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
-                  </div>
-                </template>
-              </div>
-              <!-- メモ -->
+              <div style="margin-bottom: 10px;"><template x-for="(set, sIndex) in ex.sets"><div class="set-input-row" x-show="sIndex === 0 || ex.sets[sIndex-1].w !== '' || ex.sets[sIndex-1].r !== '' || set.w !== '' || set.r !== ''"><span class="set-badge" x-text="`#${sIndex + 1}`"></span><div class="unit-input-wrap"><input type="number" step="any" inputmode="decimal" placeholder="0" x-model="set.w" @input="saveDraft()"><span class="unit-suffix">kg</span></div><div class="set-multiply">×</div><div class="unit-input-wrap"><input type="number" step="1" inputmode="numeric" placeholder="0" x-model="set.r" @input="saveDraft()"><span class="unit-suffix">回</span></div><button type="button" class="btn-clear-set" @click="set.w=''; set.r=''; saveDraft();" title="クリア"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></template></div>
               <textarea class="textarea-field" rows="1" placeholder="メモ・フォームの意識など" style="overflow: hidden; resize: none;" x-model="ex.memo" @input="adjustTextarea($event.target); saveDraft();"></textarea>
             </div>
           </template>
         </div>
-        
         <button type="button" class="btn-secondary" @click="addExercise()">＋ 次の種目を追加</button>
         <button type="button" class="btn-primary" @click="saveTraining()" :disabled="isSaving">記録を保存</button>
         <div id="save-msg" x-text="saveMsg" :style="`color: ${saveMsgColor}`"></div>
       </div>
 
-      <!-- ★新機能：履歴ポップアップ -->
       <div x-show="historyModal.isOpen" class="history-modal-overlay">
         <div class="history-modal" @click.stop>
-          <div class="history-modal-header">
-            <span class="history-modal-title" x-text="historyModal.exercise + ' の履歴'"></span>
-            <button class="history-close-btn" @click="historyModal.isOpen = false">×</button>
-          </div>
+          <div class="history-modal-header"><span class="history-modal-title" x-text="historyModal.exercise + ' の履歴'"></span><button class="history-close-btn" @click="historyModal.isOpen = false">×</button></div>
           <div class="history-modal-body">
-            <template x-for="rec in historyModal.records">
-              <div class="history-record-card">
-                <div class="history-record-date" x-text="rec.dateStr"></div>
-                <div class="history-record-sets" x-text="rec.details"></div>
-                <div class="history-record-memo" x-show="rec.memo" x-text="rec.memo"></div>
-              </div>
-            </template>
+            <template x-for="rec in historyModal.records"><div class="history-record-card"><div class="history-record-date" x-text="rec.dateStr"></div><div class="history-record-sets" x-text="rec.details"></div><div class="history-record-memo" x-show="rec.memo" x-text="rec.memo"></div></div></template>
             <div x-show="historyModal.records.length === 0" style="text-align:center; color:#8E8E93; font-size:0.9rem; padding: 20px;">記録がありません</div>
           </div>
         </div>
       </div>
-
     </div>
 
     <!-- 5. グラフ画面 -->
@@ -220,47 +153,32 @@
           <option value="">グラフ化する種目を選択...</option>
         </select>
       </div>
-      <div class="section-header" style="margin-top: 20px;"><span class="section-label">1RM PROGRESS (推定最大重量)</span></div>
+
+      <!-- ★追加：グラフ期間切り替えトグル -->
+      <div class="graph-period-toggles">
+        <button class="period-btn" id="period-btn-1M" onclick="setGraphPeriod('1M')">1M</button>
+        <button class="period-btn" id="period-btn-3M" onclick="setGraphPeriod('3M')">3M</button>
+        <button class="period-btn" id="period-btn-6M" onclick="setGraphPeriod('6M')">6M</button>
+        <button class="period-btn active" id="period-btn-ALL" onclick="setGraphPeriod('ALL')">ALL</button>
+      </div>
+
+      <div class="section-header" style="margin-top: 10px;"><span class="section-label">1RM PROGRESS (推定最大重量)</span></div>
       <div id="chart-rm-container" style="padding: 16px; position: relative; height: 250px;"><canvas id="rmChart"></canvas></div>
       <div class="section-header" style="margin-top: 20px;"><span class="section-label">VOLUME PROGRESS (総重量)</span></div>
       <div id="chart-volume-container" style="padding: 16px; position: relative; height: 250px;"><canvas id="volumeChart"></canvas></div>
     </div>
   </div>
 
-  <!-- ボトムシートとウィジェット -->
   <div id="timer-bottom-sheet">
-    <div class="sheet-handle" onclick="closeTimerSheet()"></div>
-    <div class="sheet-title">TIMER SETTINGS</div>
-    <div class="preset-pills">
-      <button class="pill-btn preset-btn active" onclick="selectPreset(180, this)">胸 3分</button>
-      <button class="pill-btn preset-btn" onclick="selectPreset(180, this)">背中 3分</button>
-      <button class="pill-btn preset-btn" onclick="selectPreset(180, this)">脚 3分</button>
-      <button class="pill-btn preset-btn" onclick="selectPreset(120, this)">腕 2分</button>
-      <button class="pill-btn preset-btn" onclick="selectPreset(90, this)">肩 1分半</button>
-    </div>
-    <div class="timer-circle-wrap">
-      <div class="timer-circle-iphone stopped"><span id="sheet-rest-time">03:00</span></div>
-    </div>
-    <div class="timer-adjust-row">
-      <button class="adjust-btn" onclick="adjustRestTime(-10)">- 10s</button>
-      <button class="adjust-btn" onclick="adjustRestTime(10)">+ 10s</button>
-    </div>
-    <div class="timer-action-row">
-      <button id="sheet-reset-btn" class="sheet-circle-btn reset" onclick="resetRestTimer()">キャンセル</button>
-      <button id="sheet-play-btn" class="sheet-circle-btn play" onclick="toggleRestTimer()">開始</button>
-    </div>
+    <div class="sheet-handle" onclick="closeTimerSheet()"></div><div class="sheet-title">TIMER SETTINGS</div>
+    <div class="preset-pills"><button class="pill-btn preset-btn active" onclick="selectPreset(180, this)">胸 3分</button><button class="pill-btn preset-btn" onclick="selectPreset(180, this)">背中 3分</button><button class="pill-btn preset-btn" onclick="selectPreset(180, this)">脚 3分</button><button class="pill-btn preset-btn" onclick="selectPreset(120, this)">腕 2分</button><button class="pill-btn preset-btn" onclick="selectPreset(90, this)">肩 1分半</button></div>
+    <div class="timer-circle-wrap"><div class="timer-circle-iphone stopped"><span id="sheet-rest-time">03:00</span></div></div>
+    <div class="timer-adjust-row"><button class="adjust-btn" onclick="adjustRestTime(-10)">- 10s</button><button class="adjust-btn" onclick="adjustRestTime(10)">+ 10s</button></div>
+    <div class="timer-action-row"><button id="sheet-reset-btn" class="sheet-circle-btn reset" onclick="resetRestTimer()">キャンセル</button><button id="sheet-play-btn" class="sheet-circle-btn play" onclick="toggleRestTimer()">開始</button></div>
   </div>
 
-  <div id="floating-total" class="floating-widget">
-    <div class="floating-total-label">TOTAL</div>
-    <div id="floating-total-time" class="floating-total-time">00:00</div>
-  </div>
-
-  <div id="floating-rest" class="floating-widget">
-    <div class="rest-circle"><span id="floating-rest-time">03:00</span></div>
-    <button id="floating-rest-play" class="float-btn-play" onclick="toggleRestTimer()"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button>
-    <button id="floating-rest-reset" class="float-btn-reset" onclick="resetRestTimer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg></button>
-  </div>
+  <div id="floating-total" class="floating-widget"><div class="floating-total-label">TOTAL</div><div id="floating-total-time" class="floating-total-time">00:00</div></div>
+  <div id="floating-rest" class="floating-widget"><div class="rest-circle"><span id="floating-rest-time">03:00</span></div><button id="floating-rest-play" class="float-btn-play" onclick="toggleRestTimer()"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button><button id="floating-rest-reset" class="float-btn-reset" onclick="resetRestTimer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg></button></div>
 
   <div id="bottom-nav-bar">
     <div class="nav-item active" id="nav-home" onclick="switchTab('home')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></div><div class="nav-text">HOME</div></div>
