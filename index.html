@@ -9,8 +9,10 @@
   <meta name="apple-mobile-web-app-title" content="ジムメモ">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#000000">
+
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon.png">
+  
   <title>ジムメモ</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -24,26 +26,49 @@
   <div class="container">
     <div id="loading">読み込み中...</div>
 
-    <!-- 1. ホーム画面 -->
+    <!-- 1. 新・ホーム画面（縦積みレイアウト） -->
     <div id="view-home" style="display: none;">
-      <div class="home-layout-grid">
-        <div class="home-left-col">
-          <div class="calendar-wrapper compact-cal">
+      <div class="home-layout-vertical">
+        
+        <!-- 上部：巨大化カレンダー＆統計 ＆ 凡例 -->
+        <div class="home-calendar-section">
+          <div class="calendar-wrapper">
             <div class="cal-header-row"><h1 class="cal-title" id="home-cal-title"></h1></div>
             <div class="cal-weekdays"><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div><div>SUN</div></div>
             <div class="cal-grid" id="home-cal-grid"></div>
           </div>
-          <div class="home-stats-block">
-            <div class="stat-row"><div class="stat-label">MONTHLY</div><div class="stat-val"><span id="home-monthly-days">0</span><span class="stat-unit">days</span></div></div>
-            <div class="stat-row"><div class="stat-label">TOTAL</div><div class="stat-val"><span id="home-total-days">0</span><span class="stat-unit">days</span></div></div>
+          
+          <!-- ★追加：色の意味がわかる凡例 -->
+          <div class="cal-legend">
+            <div class="legend-item"><div class="cal-dot" style="background-color:#FF453A;"></div>胸</div>
+            <div class="legend-item"><div class="cal-dot" style="background-color:#0A84FF;"></div>背中</div>
+            <div class="legend-item"><div class="cal-dot" style="background-color:#30D158;"></div>脚</div>
+            <div class="legend-item"><div class="cal-dot" style="background-color:#FF9F0A;"></div>肩</div>
+            <div class="legend-item"><div class="cal-dot" style="background-color:#BF5AF2;"></div>腕</div>
+            <div class="legend-item"><div class="cal-dot" style="background-color:#8E8E93;"></div>他</div>
+          </div>
+
+          <!-- ★統計を横並びに -->
+          <div class="home-stats-row">
+            <div class="stat-box">
+              <div class="stat-label">MONTHLY</div>
+              <div class="stat-val"><span id="home-monthly-days">0</span><span class="stat-unit">days</span></div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-label">TOTAL</div>
+              <div class="stat-val"><span id="home-total-days">0</span><span class="stat-unit">days</span></div>
+            </div>
           </div>
         </div>
-        <div class="home-right-col">
-          <div class="section-header"><span class="section-label">THIS WEEK</span></div>
+
+        <!-- 下部：THIS WEEK -->
+        <div class="home-this-week-section">
+          <div class="section-header" style="margin-top:0;"><span class="section-label">THIS WEEK</span></div>
           <div class="grouped-list compact-list" id="weekly-list"></div>
         </div>
+        
       </div>
-      <button class="btn-primary" onclick="openDashboardForDate(null)">ワークアウトを記録</button>
+      <button class="btn-primary" onclick="openDashboardForDate(null)" style="margin-top: 8px;">ワークアウトを記録</button>
     </div>
 
     <!-- 2. カレンダー詳細＆部位フィルター画面 -->
@@ -154,7 +179,6 @@
         </select>
       </div>
 
-      <!-- ★追加：グラフ期間切り替えトグル -->
       <div class="graph-period-toggles">
         <button class="period-btn" id="period-btn-1M" onclick="setGraphPeriod('1M')">1M</button>
         <button class="period-btn" id="period-btn-3M" onclick="setGraphPeriod('3M')">3M</button>
@@ -169,6 +193,7 @@
     </div>
   </div>
 
+  <!-- ボトムシートとウィジェット -->
   <div id="timer-bottom-sheet">
     <div class="sheet-handle" onclick="closeTimerSheet()"></div><div class="sheet-title">TIMER SETTINGS</div>
     <div class="preset-pills"><button class="pill-btn preset-btn active" onclick="selectPreset(180, this)">胸 3分</button><button class="pill-btn preset-btn" onclick="selectPreset(180, this)">背中 3分</button><button class="pill-btn preset-btn" onclick="selectPreset(180, this)">脚 3分</button><button class="pill-btn preset-btn" onclick="selectPreset(120, this)">腕 2分</button><button class="pill-btn preset-btn" onclick="selectPreset(90, this)">肩 1分半</button></div>
