@@ -1,10 +1,12 @@
 // キャッシュのバージョン名（UIを大きく更新したときは v2, v3 に変更する）
-const CACHE_NAME = 'gym-memo-cache-v1';
+const CACHE_NAME = 'gym-memo-cache-v2';
 
 // オフライン時でも即座に表示するためにキャッシュしておく静的ファイル
 const STATIC_ASSETS = [
   './',
   './index.html',
+  './style.css',
+  './app.js',
   './manifest.json',
   './icon.png',
   'https://cdn.jsdelivr.net/npm/chart.js',
