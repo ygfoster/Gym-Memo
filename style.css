@@ -27,7 +27,7 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Hiragino Sans",
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes popIn { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-/* ★追加：自作の削除確認モーダル ===== */
+/* ===== 自作の削除確認モーダル ===== */
 .custom-modal-overlay { position: fixed; inset: 0; background-color: rgba(0, 0, 0, 0.6); backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); z-index: 9000; display: flex; align-items: center; justify-content: center; padding: 20px; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .custom-modal-overlay.active { opacity: 1; pointer-events: auto; }
 .custom-modal { background-color: var(--bg-surface); border: 1px solid var(--border-strong); border-radius: 20px; width: 100%; max-width: 320px; padding: 24px; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8); text-align: center; transform: scale(0.95); transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
@@ -107,19 +107,19 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Hiragino Sans",
 /* ===== 詳細画面 ＆ 記録画面 ===== */
 .detail-date-bar { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 14px 2px; }
 .detail-date-heading { font-size: 1.35rem; font-weight: 700; color: var(--text-primary); margin: 0; letter-spacing: -0.01em; }
-
-/* ★修正：前次切り替えボタンの洗練されたデザイン */
 .detail-day-step-btns { display: flex; gap: 8px; }
 .detail-day-step-btns button { background-color: var(--bg-surface); border: 1px solid var(--border-strong); color: var(--text-secondary); border-radius: 50%; width: 32px; height: 32px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.1s; }
 .detail-day-step-btns button:active { background-color: var(--bg-elevated); color: var(--text-primary); transform: scale(0.92); }
 
 #view-day-detail { touch-action: pan-y; overflow-x: hidden; }
 
-/* ★追加：スタイリッシュなゴミ箱アイコン */
+/* ゴミ箱アイコン */
 .btn-icon-danger { background: none; border: 1px solid var(--border-subtle); color: var(--text-tertiary); width: 44px; height: 44px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.12s ease; }
 .btn-icon-danger:active { background-color: rgba(255, 69, 58, 0.1); color: var(--danger); border-color: rgba(255, 69, 58, 0.3); transform: scale(0.92); }
-.btn-icon-danger-small { background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px; display: inline-flex; transition: color 0.12s; }
-.btn-icon-danger-small:active { color: var(--danger); transform: scale(0.9); }
+
+/* ★修正：ログ画面用ゴミ箱（小）を赤色に統一 */
+.btn-icon-danger-small { background: none; border: none; color: var(--danger); cursor: pointer; padding: 4px; display: inline-flex; transition: all 0.12s; opacity: 0.8; }
+.btn-icon-danger-small:active { opacity: 1; transform: scale(0.85); }
 
 .detail-hero { display: flex; justify-content: space-between; align-items: flex-end; padding-bottom: 18px; margin-bottom: 16px; border-bottom: 1px solid var(--border-subtle); gap: 12px; }
 .detail-part-Main { font-size: 1.6rem; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; word-break: break-word; }
