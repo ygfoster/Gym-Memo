@@ -1,3 +1,11 @@
+if ('serviceWorker' in navigator) { 
+  window.addEventListener('load', () => { 
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      reg.update();
+    }).catch(()=>{}); 
+  }); 
+}
+
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwTreNAF4AVwdAFRIdeVIqR4dYn87RgbSP0-u-0n3_90oCl_7ZlBlwADXWUvCsv4kELrg/exec';
 const API_TOKEN = "MyGymAppSecretToken_2026";
 
@@ -13,7 +21,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v15"; // 強制キャッシュリセット
+const DATA_CACHE_KEY = "workout_app_data_cache_v16"; // ★キャッシュリセット
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -40,7 +48,6 @@ try {
 } catch(e) {}
 if (!timerPresets || !Array.isArray(timerPresets) || timerPresets.length === 0) { timerPresets = DEFAULT_TIMER_PRESETS; }
 
-// ★追加：エラー時のフリーズを防止するタイムアウト処理
 const fetchWithTimeout = (url, options, timeout = 15000) => {
   return Promise.race([
     fetch(url, options),
@@ -63,7 +70,6 @@ document.addEventListener("DOMContentLoaded", function() {
   const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
   if (cachedRaw) { try { initApp(JSON.parse(cachedRaw)); } catch(e) {} }
 
-  // ★修正：エラーを握り潰さず、確実に画面に表示させる
   fetchWithTimeout(GAS_URL + '?action=getInitialData&limit=45&offset=0&token=' + API_TOKEN, {}, 15000)
     .then(r => r.json()).then(data => {
       if(data.error) { 
@@ -236,8 +242,11 @@ document.addEventListener('alpine:init', () => {
         rs.forEach(r => { const sets = Array.from({ length: 5 }, () => ({ w: '', r: '' })); const parsed = parseDetailsToSets(r.details); parsed.forEach((s, i) => { if (i < 5) { sets[i].w = s.w; sets[i].r = s.r; } }); this.addExercise({ name: r.exercise, memo: r.memo, sets: sets }); });
       }
     },
+
+    // ★修正：コンディションデータ（睡眠・カロリー等）も一緒に保存するためpayloadに含める
     saveTraining() {
-      const tD = currentRecordingDateStr || formatWithZeroPad(formatDateKey(new Date())); const gP = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart;
+      const tD = currentRecordingDateStr || formatWithZeroPad(formatDateKey(new Date())); 
+      const gP = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart;
       if (!gP) { this.saveMsg = "部位を選択してください"; this.saveMsgColor = "#FF453A"; return; }
       const tData = [];
       this.formExercises.forEach(ex => {
@@ -246,8 +255,28 @@ document.addEventListener('alpine:init', () => {
         if (n || hS || m) { tData.push({ date: tD, part: gP, exercise: n || "種目不明", details: sT.trim(), memo: m }); }
       });
       if (tData.length === 0) { this.saveMsg = "内容を入力してください"; this.saveMsgColor = "#FF453A"; return; }
+      
       this.isSaving = true; this.saveMsg = ""; showSavingOverlay();
-      const payload = { action: 'saveTrainingLog', targetDate: tD, trainingData: tData, token: API_TOKEN };
+
+      // 現在画面に表示されているコンディションデータを取得
+      const conditionData = {
+        sleep: document.getElementById("sleep-time") ? document.getElementById("sleep-time").innerText : "",
+        balance: document.getElementById("cal-balance") ? document.getElementById("cal-balance").innerText : "",
+        intake: document.getElementById("cal-intake") ? document.getElementById("cal-intake").innerText : "",
+        burned: document.getElementById("cal-burned") ? document.getElementById("cal-burned").innerText : "",
+        protein: document.getElementById("p-val") ? document.getElementById("p-val").innerText : "",
+        fat: document.getElementById("f-val-log") ? document.getElementById("f-val-log").innerText : "",
+        carb: document.getElementById("c-val-log") ? document.getElementById("c-val-log").innerText : ""
+      };
+
+      const payload = { 
+        action: 'saveTrainingLog', 
+        targetDate: tD, 
+        trainingData: tData, 
+        conditionData: conditionData, // サーバーに送る
+        token: API_TOKEN 
+      };
+
       const fin = (uH) => { if (uH) globalTrainingHistory = uH; localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(tD)); this.hasDraft = false; finishSavingOverlay(() => { openHomeView(); }); };
       const saveOff = () => {
         const qR = localStorage.getItem(OFFLINE_QUEUE_KEY); let q = qR ? JSON.parse(qR) : []; q.push({ id: Date.now(), payload: payload }); localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q));
@@ -255,11 +284,16 @@ document.addEventListener('alpine:init', () => {
         const cR = localStorage.getItem(DATA_CACHE_KEY); if (cR) { let cD = JSON.parse(cR); cD.trainingHistory = globalTrainingHistory; localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cD)); }
         document.getElementById("saving-text").innerText = "オフライン保存しました"; setTimeout(() => { this.isSaving = false; fin(null); }, 1200);
       };
+      
       if (!navigator.onLine) { saveOff(); return; }
       fetchWithTimeout(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) })
-      .then(res => res.json()).then(r => { this.isSaving = false; if (r.success) { fin(r.updatedHistory); } else { hideSavingOverlayImmediate(); this.saveMsg = "エラー: " + r.error; this.saveMsgColor = "#FF453A"; } })
-      .catch(e => { saveOff(); });
+      .then(res => res.json()).then(r => { 
+        this.isSaving = false; 
+        if (r.success) { fin(r.updatedHistory); } 
+        else { hideSavingOverlayImmediate(); this.saveMsg = "エラー: " + r.error; this.saveMsgColor = "#FF453A"; } 
+      }).catch(e => { saveOff(); });
     },
+    
     confirmDeleteFromLog() {
       if(!currentRecordingDateStr) return;
       openDeleteModal(currentRecordingDateStr, () => {
@@ -460,6 +494,17 @@ function updateHomeStats() {
   if(document.getElementById("home-total-days")) document.getElementById("home-total-days").innerText = ud.size;
 }
 
+// ★修正：エラーの原因だった関数を復活
+function isDateTrained(dateKey, useFilter) {
+  if (!globalTrainingHistory) return false;
+  let records = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === dateKey);
+  if (!useFilter || activeFilters.length === 0) return records.length > 0;
+  return records.some(r => activeFilters.some(f => {
+      let pt = String(r.part || "").trim();
+      return pt.includes(f) || (f==="脚" && pt.includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(pt));
+  }));
+}
+
 function getDateTrainedParts(dateKey, useFilter) {
   const records = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === dateKey);
   let filtered = records;
@@ -644,7 +689,6 @@ function showSavingOverlay() { const o = document.getElementById("saving-overlay
 function finishSavingOverlay(cb) { document.getElementById("saving-spinner").style.display="none"; document.getElementById("saving-check").style.display="flex"; document.getElementById("saving-text").innerText="完了しました"; setTimeout(()=>{ document.getElementById("saving-overlay").classList.remove("active"); if (cb) cb(); }, 500); }
 function hideSavingOverlayImmediate() { document.getElementById("saving-overlay").classList.remove("active"); }
 
-// ★修正：エラー時に確実に画面へメッセージを表示する
 function showError(err) { 
   const l = document.getElementById("loading"); 
   if(l){
