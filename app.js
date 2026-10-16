@@ -12,6 +12,9 @@ let previousViewBeforeDetail = 'home';
 let currentRecordingDateStr = "";
 let currentDetailDateKey = "";
 
+// モーダル用変数
+let pendingDeleteAction = null;
+
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
 const DATA_CACHE_KEY = "workout_app_data_cache_v1";
@@ -95,7 +98,7 @@ function updateTimerDisplays() {
   const tStr = formatTime(restRemainingSeconds);
   document.getElementById('floating-rest-time').innerText = tStr; document.getElementById('sheet-rest-time').innerText = tStr;
   const pbS = document.getElementById('sheet-play-btn'), pbF = document.getElementById('floating-rest-play'), cI = document.querySelector('.timer-circle-iphone');
-  // ★修正：タイマー画面のテキストを Stop / Start に変更
+  // タイマーのテキストは Reset / Stop / Start
   if (isResting) { pbS.innerText = "Stop"; pbS.className = "sheet-circle-btn stop"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`; cI.className = "timer-circle-iphone running"; }
   else { pbS.innerText = "Start"; pbS.className = "sheet-circle-btn play"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`; cI.className = "timer-circle-iphone stopped"; }
 }
@@ -202,33 +205,22 @@ document.addEventListener('alpine:init', () => {
       .catch(e => { saveOff(); });
     },
     
-    // ★追加：LOG画面での削除処理
-    deleteThisDay() {
+    confirmDeleteFromLog() {
       if(!currentRecordingDateStr) return;
-      if(!confirm(`${document.getElementById("recording-target-label").innerText} の記録をすべて削除しますか？`)) return;
-      
-      this.isSaving = true;
-      showSavingOverlay();
-      
-      const payload = { action: 'saveTrainingLog', targetDate: currentRecordingDateStr, trainingData: [], token: API_TOKEN };
-      
-      fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) })
-      .then(res => res.json()).then(r => { 
-        this.isSaving = false; 
-        if (r.success) { 
-          globalTrainingHistory = r.updatedHistory || [];
-          localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(currentRecordingDateStr));
-          this.hasDraft = false;
-          finishSavingOverlay(() => { openHomeView(); });
-        } else { 
-          hideSavingOverlayImmediate(); 
-          alert("エラー: " + r.error); 
-        } 
-      })
-      .catch(e => { 
-        this.isSaving = false;
-        hideSavingOverlayImmediate();
-        alert("通信エラー");
+      openDeleteModal(currentRecordingDateStr, () => {
+        this.isSaving = true; showSavingOverlay();
+        const payload = { action: 'saveTrainingLog', targetDate: currentRecordingDateStr, trainingData: [], token: API_TOKEN };
+        fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) })
+        .then(res => res.json()).then(r => { 
+          this.isSaving = false; 
+          if (r.success) { 
+            globalTrainingHistory = r.updatedHistory || [];
+            localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(currentRecordingDateStr));
+            this.hasDraft = false;
+            finishSavingOverlay(() => { openHomeView(); });
+          } else { hideSavingOverlayImmediate(); alert("エラー: " + r.error); } 
+        })
+        .catch(e => { this.isSaving = false; hideSavingOverlayImmediate(); alert("通信エラー"); });
       });
     },
     adjustTextarea(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
@@ -310,7 +302,6 @@ window.shiftLogDay = function(offset) {
   openDashboardForDate(formatDateKey(n), false, offset > 0 ? "slide-anim-from-right" : "slide-anim-from-left");
 };
 
-// ★修正：LOG画面にスライドアニメーションを適用
 function openDashboardForDate(tK, sH, slideClass) {
   hideAllViews(); 
   const v = document.getElementById("view-dashboard");
@@ -340,8 +331,8 @@ function openDashboardForDate(tK, sH, slideClass) {
 function loadHealthDataIntoPrefix(dK, p) { const n = normalizeDateStr(dK); if (globalHealthMap[n]) { renderVitalsToDOM(globalHealthMap[n], p); } else { renderVitalsToDOM(null, p); fetch(GAS_URL + '?action=getDataForDate&date=' + formatWithZeroPad(n) + '&token=' + API_TOKEN).then(res => res.json()).then(data => { if (data && !data.error) { globalHealthMap[n] = data; renderVitalsToDOM(data, p); } }).catch(()=>{}); } }
 function renderVitalsToDOM(data, p) { document.getElementById(p+"sleep-time").innerText = cleanMetric(data?.sleep, ""); document.getElementById(p+"cal-intake").innerText = cleanMetric(data?.intake, ""); document.getElementById(p+"cal-burned").innerText = cleanMetric(data?.burned, ""); document.getElementById(p+"p-val").innerText = cleanMetric(data?.protein, ""); document.getElementById(p+"f-val").innerText = cleanMetric(data?.fat, ""); document.getElementById(p+"c-val").innerText = cleanMetric(data?.carb, ""); const d = data ? parseInt(String(data.balance).replace(/[^-0-9]/g, ""), 10) : NaN; document.getElementById(p+"cal-balance").innerText = isNaN(d) ? "" : (d > 0 ? "+" : "") + d.toLocaleString() + " kcal"; }
 
-// ★カレンダー描画を安全に行うため、すべて文字列キャストで保護
-function normalizeDateStr(s) { if (!s) return ""; const n = String(s).match(/\d+/g); if (n && n.length >= 3) return `${parseInt(n[0],10)}/${parseInt(n[1],10)}/${parseInt(n[2],10)}`; return String(s).trim(); }
+// ★カレンダーの描画バグ（nullや未定義データの混入）を完全に防ぐ文字列キャスト関数群
+function normalizeDateStr(s) { if (!s) return ""; const str = String(s).trim(); const n = str.match(/\d+/g); if (n && n.length >= 3) return `${parseInt(n[0],10)}/${parseInt(n[1],10)}/${parseInt(n[2],10)}`; return str; }
 function parseDateKeyToObj(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) return new Date(parseInt(n[0],10), parseInt(n[1],10)-1, parseInt(n[2],10)); return new Date(); }
 function formatDateKey(d) { return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`; }
 function formatWithZeroPad(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) return `${n[0]}/${String(parseInt(n[1],10)).padStart(2,'0')}/${String(parseInt(n[2],10)).padStart(2,'0')}`; return String(s); }
@@ -351,23 +342,26 @@ function parseDetailsToSets(s) { if (!s) return []; return String(s).split('\n')
 
 function updateHomeStats() {
   if (!globalTrainingHistory) return; const ud = new Set(), md = new Set();
-  globalTrainingHistory.forEach(r => { const dStr = normalizeDateStr(r.date); ud.add(dStr); const d = parseDateKeyToObj(dStr); if (d.getFullYear() === currentCalYear && d.getMonth() === currentCalMonth) md.add(dStr); });
+  globalTrainingHistory.forEach(r => { if(!r.date) return; const dStr = normalizeDateStr(r.date); ud.add(dStr); const d = parseDateKeyToObj(dStr); if (d.getFullYear() === currentCalYear && d.getMonth() === currentCalMonth) md.add(dStr); });
   if(document.getElementById("home-monthly-days")) document.getElementById("home-monthly-days").innerText = md.size;
   if(document.getElementById("home-total-days")) document.getElementById("home-total-days").innerText = ud.size;
 }
 
 function getDateTrainedParts(dateKey, useFilter) {
-  const records = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === dateKey);
+  const records = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === dateKey);
   let filtered = records;
   if (useFilter && activeFilters.length > 0) {
-    filtered = records.filter(r => activeFilters.some(f => (r.part||"").includes(f) || (f==="脚" && (r.part||"").includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(r.part))));
+    filtered = records.filter(r => activeFilters.some(f => {
+        let pt = String(r.part || "").trim();
+        return pt.includes(f) || (f==="脚" && pt.includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(pt));
+    }));
   }
   const parts = new Set();
   filtered.forEach(r => { let pt = String(r.part || "").trim(); if (pt === "足") pt = "脚"; if (["胸", "背中", "脚", "肩", "腕"].includes(pt)) parts.add(pt); else parts.add("その他"); });
   return Array.from(parts);
 }
 
-// ★修正：カレンダー生成時に上書きバグが発生しないようDOMツリーを安全に構築
+// カレンダー生成のロジック
 function renderHomeCalendar() { 
   buildCalendarGrid(currentCalYear, currentCalMonth, "home-cal-title", "home-cal-grid", false); 
   updateHomeStats(); 
@@ -385,14 +379,12 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
 
   const frag = document.createDocumentFragment();
 
-  // 前月の空白分
   for (let i = fD - 1; i >= 0; i--) { 
     const c = document.createElement("div"); c.className = "cal-cell";
     c.innerHTML = `<div class="cal-day other-month">${pDIM - i}</div>`;
     frag.appendChild(c);
   }
   
-  // 今月分
   for (let d = 1; d <= dIM; d++) {
     const c = document.createElement("div"); c.className = "cal-cell clickable";
     const dK = `${y}/${m+1}/${d}`; const t = isDateTrained(dK, isD);
@@ -417,7 +409,6 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
     frag.appendChild(c);
   }
   
-  // 翌月の空白分
   for (let i = 1; i <= (7 - ((fD + dIM) % 7)) % 7; i++) { 
     const c = document.createElement("div"); c.className = "cal-cell";
     c.innerHTML = `<div class="cal-day other-month">${i}</div>`;
@@ -425,17 +416,22 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
   }
   
   g.appendChild(frag); // 最後に一括で追加
+  
+  // ▼ ここでTHIS WEEKを強制的に再描画する（途中で止まらせない）
+  setTimeout(renderWeeklySummary, 50);
 }
 
 function renderWeeklySummary() {
-  const c = document.getElementById("weekly-list"); c.innerHTML = "";
+  const c = document.getElementById("weekly-list"); 
+  if(!c) return;
+  c.innerHTML = "";
   const n = new Date(), tK = formatDateKey(n), m = new Date(n.getFullYear(), n.getMonth(), n.getDate() + ((n.getDay()===0)?-6:1-n.getDay()));
   for (let i = 0; i < 7; i++) {
     const t = new Date(m.getFullYear(), m.getMonth(), m.getDate() + i), k = formatDateKey(t);
-    const rs = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === k);
+    const rs = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === k);
     let s = "オフ", cl = "rest";
     if (rs.length > 0) {
-      cl = ""; const pm = {}; rs.forEach(r => { pm[r.part||"未指定"] = (pm[r.part||"未指定"]||0) + (r.sets||0); });
+      cl = ""; const pm = {}; rs.forEach(r => { let p = String(r.part||"未指定").trim(); pm[p] = (pm[p]||0) + (r.sets||0); });
       s = Object.keys(pm).map(p => `${p} / ${pm[p]}セット`).join(" , ");
     }
     const rE = document.createElement("div"); rE.className = `list-row-compact ${k === tK ? 'is-today' : ''}`;
@@ -445,7 +441,6 @@ function renderWeeklySummary() {
   }
 }
 
-// ★修正：カレンダーの月切り替えにスライドアニメーションを適用
 window.changeHomeMonth = function(offset) { 
   currentCalMonth += offset; 
   if (currentCalMonth < 0) { currentCalMonth = 11; currentCalYear--; } 
@@ -460,10 +455,35 @@ window.changeHomeMonth = function(offset) {
   renderHomeCalendar(); 
 };
 
-/* --- 削除詳細画面のボタン処理 --- */
-document.addEventListener("DOMContentLoaded", () => {
-  document.getElementById("day-detail-delete-btn")?.addEventListener("click", () => {
-    if(!confirm(`${document.getElementById("day-detail-title").innerText} の記録をすべて削除しますか？`)) return;
+
+/* ======================================================================
+   自作モーダル（確認ダイアログ）の制御ロジック
+====================================================================== */
+function openDeleteModal(dateKey, onConfirm) {
+  pendingDeleteAction = onConfirm;
+  const targetLabel = formatDisplayDateWithDay(dateKey);
+  document.getElementById("delete-confirm-msg").innerText = `${targetLabel} の記録をすべて削除しますか？`;
+  document.getElementById("delete-confirm-modal").style.display = "flex";
+  // わずかな遅延でアニメーションさせる
+  setTimeout(() => { document.getElementById("delete-confirm-modal").classList.add("active"); }, 10);
+}
+
+window.closeDeleteModal = function() {
+  document.getElementById("delete-confirm-modal").classList.remove("active");
+  setTimeout(() => { document.getElementById("delete-confirm-modal").style.display = "none"; pendingDeleteAction = null; }, 200);
+}
+
+window.executeDelete = function() {
+  if(pendingDeleteAction) {
+    pendingDeleteAction();
+    closeDeleteModal();
+  }
+}
+
+// 詳細画面からの削除関数
+window.confirmDeleteFromDetail = function() {
+  if(!currentDetailDateKey) return;
+  openDeleteModal(currentDetailDateKey, () => {
     showSavingOverlay();
     const payload = { action: 'saveTrainingLog', targetDate: currentDetailDateKey, trainingData: [], token: API_TOKEN };
     fetch(GAS_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) })
@@ -474,7 +494,7 @@ document.addEventListener("DOMContentLoaded", () => {
         } else { hideSavingOverlayImmediate(); alert("エラー: " + result.error); }
       }).catch(e => { hideSavingOverlayImmediate(); alert("通信エラー"); });
   });
-});
+}
 
 function openDayDetailView(dK, dL, fV, sC, sH) {
   if (fV) previousViewBeforeDetail = fV; currentDetailDateKey = normalizeDateStr(dK); hideAllViews(); const v = document.getElementById("view-day-detail"); v.style.display = "block";
@@ -482,12 +502,12 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
   document.getElementById("day-detail-title").innerText = dL || formatDisplayDateWithDay(currentDetailDateKey); loadHealthDataIntoPrefix(currentDetailDateKey, "detail-");
   const s = document.getElementById("day-summary-container"), c = document.getElementById("day-detail-content"), b = document.getElementById("day-detail-edit-btn"), del = document.getElementById("day-detail-delete-btn"); s.innerHTML = ""; c.innerHTML = "";
 
-  const rs = globalTrainingHistory.filter(r => normalizeDateStr(r.date) === currentDetailDateKey);
+  const rs = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === currentDetailDateKey);
   if (rs.length === 0) {
     s.style.display = "none"; c.innerHTML = `<div class="empty-state"><div class="empty-state-title">トレーニング記録がありません</div></div>`; b.innerText = "この日のワークアウトを記録"; if(del) del.style.display = "none";
   } else {
-    b.innerText = "この日の記録を編集・追加"; if(del) del.style.display = "flex";
-    const parts = [...new Set(rs.map(r => r.part || "未指定"))].join("・") + "の日"; let vol = 0, sets = 0;
+    b.innerText = "この日の記録を編集・追加"; if(del) del.style.display = "inline-flex";
+    const parts = [...new Set(rs.map(r => String(r.part || "未指定").trim()))].join("・") + "の日"; let vol = 0, sets = 0;
     rs.forEach(r => { const ps = parseDetailsToSets(r.details); sets += ps.length; ps.forEach(s => { vol += (parseFloat(s.w)||0) * (parseFloat(s.r)||0); }); });
     s.style.display = "block"; s.innerHTML = `<div class="detail-hero"><div><div class="detail-part-Main">${parts}</div><div class="detail-sub-counts">${rs.length}種目 ・ 合計 ${sets}セット</div></div><div class="detail-volume-block"><div class="detail-volume-num">${Number.isInteger(vol) ? vol.toLocaleString() : vol.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<span class="detail-volume-kg">kg</span></div><div class="detail-volume-unit">TOTAL VOLUME</div></div></div>`;
     rs.forEach(r => {
@@ -532,7 +552,7 @@ window.setGraphPeriod = function(period) { currentGraphPeriod = period; document
 function initGraphView() {
   const sel = document.getElementById("graph-exercise-select"); const cV = sel.value;
   const pm = { "胸": new Set(), "背中": new Set(), "脚": new Set(), "肩": new Set(), "腕": new Set(), "その他": new Set() };
-  globalTrainingHistory.forEach(r => { const ex = (r.exercise || "").trim(); let pt = (r.part || "").trim(); if (!ex || ex === "種目不明") return; if (pt === "足") pt = "脚"; if (!["胸", "背中", "脚", "肩", "腕"].includes(pt)) pt = "その他"; pm[pt].add(ex); });
+  globalTrainingHistory.forEach(r => { const ex = String(r.exercise || "").trim(); let pt = String(r.part || "").trim(); if (!ex || ex === "種目不明") return; if (pt === "足") pt = "脚"; if (!["胸", "背中", "脚", "肩", "腕"].includes(pt)) pt = "その他"; pm[pt].add(ex); });
   let h = '<option value="">グラフ化する種目を選択...</option>';
   ["胸", "背中", "脚", "肩", "腕", "その他"].forEach(p => { const exs = Array.from(pm[p]).sort(); if (exs.length > 0) { h += `<optgroup label="【${p}】">`; exs.forEach(ex => { h += `<option value="${ex}">${ex}</option>`; }); h += `</optgroup>`; } });
   sel.innerHTML = h; if (cV && Array.from(sel.options).some(o => o.value === cV)) { sel.value = cV; updateGraphs(); } else clearGraphs();
@@ -540,7 +560,7 @@ function initGraphView() {
 function clearGraphs() { if (rmChartInstance) rmChartInstance.destroy(); if (volumeChartInstance) volumeChartInstance.destroy(); }
 function updateGraphs() {
   const tE = document.getElementById("graph-exercise-select").value; if (!tE) { clearGraphs(); return; }
-  let records = globalTrainingHistory.filter(r => r.exercise === tE).sort((a,b) => new Date(normalizeDateStr(a.date)) - new Date(normalizeDateStr(b.date)));
+  let records = globalTrainingHistory.filter(r => r.date && String(r.exercise).trim() === tE).sort((a,b) => new Date(normalizeDateStr(a.date)) - new Date(normalizeDateStr(b.date)));
   if (currentGraphPeriod !== 'ALL') { const cutoffDate = new Date(); if (currentGraphPeriod === '1M') cutoffDate.setMonth(cutoffDate.getMonth() - 1); if (currentGraphPeriod === '3M') cutoffDate.setMonth(cutoffDate.getMonth() - 3); if (currentGraphPeriod === '6M') cutoffDate.setMonth(cutoffDate.getMonth() - 6); records = records.filter(r => new Date(normalizeDateStr(r.date)) >= cutoffDate); }
   const lbls = [], rmd = [], vd = [];
   records.forEach(r => {
