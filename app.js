@@ -389,7 +389,12 @@ function openDashboardForDate(tK, sH, slideClass) {
   document.getElementById("recording-target-label").innerText = `${formatDisplayDateWithDay(currentRecordingDateStr)} の記録`;
   
   const pO = new Date(dO.getFullYear(), dO.getMonth(), dO.getDate() - 1); 
-  document.getElementById("form-vitals-caption").innerText = `前日 ${pO.getMonth() + 1}/${pO.getDate()} (${DAY_LABELS_SHORT[pO.getDay()]}) のコンディション`;
+  
+  // ★追加：見出しに具体的な日付を入れて区別しやすくする
+  const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
+  const pStr = `${pO.getMonth() + 1}/${pO.getDate()}(${DAY_LABELS_SHORT[pO.getDay()]})`;
+  const capEl = document.getElementById("form-vitals-caption");
+  if (capEl) capEl.innerText = `栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
 
   loadHealthDataIntoPrefix(formatDateKey(pO), "");
   
@@ -616,7 +621,18 @@ window.confirmDeleteFromDetail = function() {
 function openDayDetailView(dK, dL, fV, sC, sH) {
   if (fV) previousViewBeforeDetail = fV; currentDetailDateKey = normalizeDateStr(dK); hideAllViews(); const v = document.getElementById("view-day-detail"); v.style.display = "block";
   if (sC) { v.classList.remove("slide-anim-from-right", "slide-anim-from-left"); void v.offsetWidth; v.classList.add(sC); } else { v.classList.add("slide-anim-from-right"); }
-  document.getElementById("day-detail-title").innerText = dL || formatDisplayDateWithDay(currentDetailDateKey); loadHealthDataIntoPrefix(currentDetailDateKey, "detail-");
+  document.getElementById("day-detail-title").innerText = dL || formatDisplayDateWithDay(currentDetailDateKey); 
+
+  // ★追加：見出しに具体的な日付を入れて区別しやすくする（前日データなので pO を基準に取得）
+  const dO = parseDateKeyToObj(currentDetailDateKey);
+  const pO = new Date(dO.getFullYear(), dO.getMonth(), dO.getDate() - 1); 
+  const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
+  const pStr = `${pO.getMonth() + 1}/${pO.getDate()}(${DAY_LABELS_SHORT[pO.getDay()]})`;
+  const capEl = document.getElementById("detail-vitals-caption");
+  if (capEl) capEl.innerText = `栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
+
+  loadHealthDataIntoPrefix(formatDateKey(pO), "detail-");
+  
   const s = document.getElementById("day-summary-container"), c = document.getElementById("day-detail-content"), b = document.getElementById("day-detail-edit-btn"), del = document.getElementById("day-detail-delete-btn"); s.innerHTML = ""; c.innerHTML = "";
 
   const rs = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === currentDetailDateKey);
@@ -691,7 +707,6 @@ let rmChartInstance = null; let volumeChartInstance = null;
 let currentGraphPeriod = 'ALL';
 window.setGraphPeriod = function(period) { currentGraphPeriod = period; document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active')); document.getElementById('period-btn-' + period).classList.add('active'); updateGraphs(); };
 
-/* ★追加：グラフ画面の自作ドロップダウン制御ロジック */
 window.toggleGraphSelect = function() {
   const list = document.getElementById('graph-select-list');
   const icon = document.getElementById('graph-select-icon');
