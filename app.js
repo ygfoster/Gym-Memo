@@ -23,7 +23,14 @@ const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "Ju
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
 
 const DEFAULT_COLORS = { "胸": "#FF453A", "背中": "#0A84FF", "脚": "#30D158", "肩": "#FF9F0A", "腕": "#BF5AF2", "その他": "#8E8E93" };
-let partColors = JSON.parse(localStorage.getItem('workout_app_colors_v1')) || DEFAULT_COLORS;
+
+// ★修正：色が取得できなかった場合でも絶対にエラーにしないフォールバック
+let partColors = null;
+try {
+  const savedColors = localStorage.getItem('workout_app_colors_v1');
+  if (savedColors) { partColors = JSON.parse(savedColors); }
+} catch(e) { console.error("Color parse error"); }
+if (!partColors || typeof partColors !== 'object') { partColors = DEFAULT_COLORS; }
 
 document.addEventListener("DOMContentLoaded", function() {
   initBrowserHistoryGuard(); 
@@ -98,7 +105,6 @@ function updateTimerDisplays() {
   const tStr = formatTime(restRemainingSeconds);
   document.getElementById('floating-rest-time').innerText = tStr; document.getElementById('sheet-rest-time').innerText = tStr;
   const pbS = document.getElementById('sheet-play-btn'), pbF = document.getElementById('floating-rest-play'), cI = document.querySelector('.timer-circle-iphone');
-  // タイマーのテキストは Reset / Stop / Start
   if (isResting) { pbS.innerText = "Stop"; pbS.className = "sheet-circle-btn stop"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>`; cI.className = "timer-circle-iphone running"; }
   else { pbS.innerText = "Start"; pbS.className = "sheet-circle-btn play"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`; cI.className = "timer-circle-iphone stopped"; }
 }
@@ -331,7 +337,6 @@ function openDashboardForDate(tK, sH, slideClass) {
 function loadHealthDataIntoPrefix(dK, p) { const n = normalizeDateStr(dK); if (globalHealthMap[n]) { renderVitalsToDOM(globalHealthMap[n], p); } else { renderVitalsToDOM(null, p); fetch(GAS_URL + '?action=getDataForDate&date=' + formatWithZeroPad(n) + '&token=' + API_TOKEN).then(res => res.json()).then(data => { if (data && !data.error) { globalHealthMap[n] = data; renderVitalsToDOM(data, p); } }).catch(()=>{}); } }
 function renderVitalsToDOM(data, p) { document.getElementById(p+"sleep-time").innerText = cleanMetric(data?.sleep, ""); document.getElementById(p+"cal-intake").innerText = cleanMetric(data?.intake, ""); document.getElementById(p+"cal-burned").innerText = cleanMetric(data?.burned, ""); document.getElementById(p+"p-val").innerText = cleanMetric(data?.protein, ""); document.getElementById(p+"f-val").innerText = cleanMetric(data?.fat, ""); document.getElementById(p+"c-val").innerText = cleanMetric(data?.carb, ""); const d = data ? parseInt(String(data.balance).replace(/[^-0-9]/g, ""), 10) : NaN; document.getElementById(p+"cal-balance").innerText = isNaN(d) ? "" : (d > 0 ? "+" : "") + d.toLocaleString() + " kcal"; }
 
-// ★カレンダーの描画バグ（nullや未定義データの混入）を完全に防ぐ文字列キャスト関数群
 function normalizeDateStr(s) { if (!s) return ""; const str = String(s).trim(); const n = str.match(/\d+/g); if (n && n.length >= 3) return `${parseInt(n[0],10)}/${parseInt(n[1],10)}/${parseInt(n[2],10)}`; return str; }
 function parseDateKeyToObj(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) return new Date(parseInt(n[0],10), parseInt(n[1],10)-1, parseInt(n[2],10)); return new Date(); }
 function formatDateKey(d) { return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()}`; }
@@ -368,9 +373,12 @@ function renderHomeCalendar() {
 }
 
 function buildCalendarGrid(y, m, tId, gId, isD) {
-  document.getElementById(tId).innerText = `${MONTH_NAMES[m]} ${y}`;
-  const g = document.getElementById(gId);
-  g.innerHTML = ""; // 完全に中身をクリア
+  const titleEl = document.getElementById(tId);
+  const gridEl = document.getElementById(gId);
+  if (!titleEl || !gridEl) return;
+  
+  titleEl.innerText = `${MONTH_NAMES[m]} ${y}`;
+  gridEl.innerHTML = "";
 
   const fD = (new Date(y, m, 1).getDay() + 6) % 7; 
   const dIM = new Date(y, m+1, 0).getDate(); 
@@ -395,6 +403,7 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
       if (parts.length > 0) {
         dotsHtml = '<div class="cal-dots-wrap">';
         parts.slice(0, 4).forEach(pt => {
+          // ★修正：絶対に色がundefinedにならないように保護
           let pc = partColors || DEFAULT_COLORS;
           let color = pc[pt] || pc["その他"] || '#8E8E93';
           dotsHtml += `<div class="cal-dot" style="background-color: ${color};"></div>`;
@@ -415,10 +424,19 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
     frag.appendChild(c);
   }
   
-  g.appendChild(frag); // 最後に一括で追加
-  
-  // ▼ ここでTHIS WEEKを強制的に再描画する（途中で止まらせない）
+  gridEl.appendChild(frag);
   setTimeout(renderWeeklySummary, 50);
+}
+
+// 記録があるか判定
+function isDateTrained(dateKey, useFilter) {
+  if (!globalTrainingHistory) return false;
+  let records = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === dateKey);
+  if (!useFilter || activeFilters.length === 0) return records.length > 0;
+  return records.some(r => activeFilters.some(f => {
+      let pt = String(r.part || "").trim();
+      return pt.includes(f) || (f==="脚" && pt.includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(pt));
+  }));
 }
 
 function renderWeeklySummary() {
