@@ -11,8 +11,6 @@ let currentCalMonth = new Date().getMonth();
 let previousViewBeforeDetail = 'home';
 let currentRecordingDateStr = "";
 let currentDetailDateKey = "";
-
-// モーダル用変数
 let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
@@ -21,15 +19,29 @@ const DATA_CACHE_KEY = "workout_app_data_cache_v1";
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
-
 const DEFAULT_COLORS = { "胸": "#FF453A", "背中": "#0A84FF", "脚": "#30D158", "肩": "#FF9F0A", "腕": "#BF5AF2", "その他": "#8E8E93" };
 
 let partColors = null;
 try {
   const savedColors = localStorage.getItem('workout_app_colors_v1');
   if (savedColors) { partColors = JSON.parse(savedColors); }
-} catch(e) { console.error("Color parse error"); }
+} catch(e) {}
 if (!partColors || typeof partColors !== 'object') { partColors = DEFAULT_COLORS; }
+
+// ★追加：タイマープリセットの管理データ
+const DEFAULT_TIMER_PRESETS = [
+  { label: "胸", seconds: 180 },
+  { label: "背中", seconds: 180 },
+  { label: "脚", seconds: 180 },
+  { label: "腕", seconds: 120 },
+  { label: "肩", seconds: 90 }
+];
+let timerPresets = null;
+try {
+  const savedPresets = localStorage.getItem('workout_app_timer_presets_v1');
+  if (savedPresets) { timerPresets = JSON.parse(savedPresets); }
+} catch(e) {}
+if (!timerPresets || !Array.isArray(timerPresets) || timerPresets.length === 0) { timerPresets = DEFAULT_TIMER_PRESETS; }
 
 document.addEventListener("DOMContentLoaded", function() {
   initBrowserHistoryGuard(); 
@@ -38,8 +50,11 @@ document.addEventListener("DOMContentLoaded", function() {
   initCalendarSwipe(); 
   initTimerSheetSwipe();
   makeDraggable(document.getElementById('floating-total')); makeDraggable(document.getElementById('floating-rest'));
+  
+  // 初期化時にプリセットボタンを生成
+  renderTimerPresets();
+  
   updateTimerDisplays();
-
   localStorage.removeItem(STORAGE_VIEW_KEY);
   
   const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
@@ -98,6 +113,36 @@ document.addEventListener("visibilitychange", function() {
 ====================================================================== */
 let currentPresetSeconds = 180, restRemainingSeconds = 180, isResting = false, restTimerInterval = null, restEndTime = 0;
 let totalTimerInterval = null, totalStartTime = 0, totalSeconds = 0, isTotalTimerRunning = false, wakeLock = null;
+
+// ★追加：タイマー画面にプリセットボタンを動的生成
+function renderTimerPresets() {
+  const container = document.getElementById('timer-presets-container');
+  if(!container) return;
+  container.innerHTML = '';
+  
+  if (timerPresets && timerPresets.length > 0) {
+    currentPresetSeconds = timerPresets[0].seconds;
+    if(!isResting) restRemainingSeconds = currentPresetSeconds;
+  }
+
+  timerPresets.forEach((p, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'pill-btn preset-btn' + (idx === 0 ? ' active' : '');
+    
+    let timeStr = "";
+    if (p.seconds >= 60) {
+      timeStr += Math.floor(p.seconds / 60) + "分";
+      if (p.seconds % 60 > 0) timeStr += (p.seconds % 60) + "秒";
+    } else {
+      timeStr += p.seconds + "秒";
+    }
+    
+    btn.innerText = p.label ? `${p.label} ${timeStr}` : timeStr;
+    btn.onclick = () => selectPreset(p.seconds, btn);
+    container.appendChild(btn);
+  });
+  updateTimerDisplays();
+}
 
 function formatTime(s) { if (s < 0) s = 0; return `${Math.floor(s / 60).toString().padStart(2, '0')}:${(Math.floor(s) % 60).toString().padStart(2, '0')}`; }
 function updateTimerDisplays() {
@@ -241,11 +286,36 @@ document.addEventListener('alpine:init', () => {
     colors: partColors,
     palette: ["#FF453A", "#FF9F0A", "#FFD60A", "#30D158", "#66D4CF", "#0A84FF", "#5E5CE6", "#BF5AF2", "#FF375F", "#8E8E93", "#FFFFFF"],
     activePart: null,
+    
+    // ★追加：タイマープリセット編集用データ
+    presetList: timerPresets.map(p => ({ label: p.label, min: Math.floor(p.seconds / 60), sec: p.seconds % 60 })),
+    
     openPalette(part) { this.activePart = this.activePart === part ? null : part; },
     selectColor(color) {
       if(!this.activePart) return;
       this.colors[this.activePart] = color; this.activePart = null; partColors = this.colors;
       localStorage.setItem('workout_app_colors_v1', JSON.stringify(this.colors)); renderHomeCalendar();
+    },
+    savePresets() {
+      // 編集した分・秒をsecondsに変換してグローバルに保存
+      timerPresets = this.presetList.map(p => ({
+        label: p.label.trim(),
+        seconds: (parseInt(p.min) || 0) * 60 + (parseInt(p.sec) || 0)
+      }));
+      localStorage.setItem('workout_app_timer_presets_v1', JSON.stringify(timerPresets));
+      renderTimerPresets(); // タイマー画面の再生成
+      
+      // 保存完了の簡単なフィードバック
+      const btn = document.querySelector('.btn-secondary');
+      const originalText = btn.innerText;
+      btn.innerText = "保存しました！";
+      btn.style.backgroundColor = "#30D158";
+      btn.style.color = "#000000";
+      setTimeout(() => {
+        btn.innerText = originalText;
+        btn.style.backgroundColor = "";
+        btn.style.color = "";
+      }, 1500);
     }
   }));
 });
@@ -313,14 +383,12 @@ window.shiftLogDay = function(offset) {
   openDashboardForDate(formatDateKey(n), false, offset > 0 ? "slide-anim-from-right" : "slide-anim-from-left");
 };
 
-// ★修正：下部メニュー（LOGタブ）からのアクセスでもデータが確実に入るよう初期化ロジックを最適化
 function openDashboardForDate(tK, sH, slideClass) {
   hideAllViews(); 
   const v = document.getElementById("view-dashboard");
   v.style.display = "block"; 
   document.getElementById("nav-log").classList.add("active");
   
-  // 今日の日付をベースにする
   let dO = tK ? parseDateKeyToObj(tK) : new Date(); 
   currentRecordingDateStr = formatWithZeroPad(formatDateKey(dO)); 
   document.getElementById("recording-target-label").innerText = `${formatDisplayDateWithDay(currentRecordingDateStr)} の記録`;
@@ -328,7 +396,6 @@ function openDashboardForDate(tK, sH, slideClass) {
   const pO = new Date(dO.getFullYear(), dO.getMonth(), dO.getDate() - 1); 
   document.getElementById("form-vitals-caption").innerText = `前日 ${pO.getMonth() + 1}/${pO.getDate()} (${DAY_LABELS_SHORT[pO.getDay()]}) のコンディション`;
 
-  // 確実に対象日のデータをフェッチして表示させる
   loadHealthDataIntoPrefix(formatDateKey(pO), "");
   
   if (window.alpineWorkoutForm) window.alpineWorkoutForm.loadDraftAndRecords(currentRecordingDateStr);
@@ -339,7 +406,6 @@ function openDashboardForDate(tK, sH, slideClass) {
     void dc.offsetWidth;
     dc.classList.add(slideClass);
   } else if(dc) {
-    // 下部メニューから来た時用のアニメーション
     dc.classList.remove("slide-anim-from-right", "slide-anim-from-left");
     void dc.offsetWidth;
     dc.classList.add("slide-anim-from-right"); 
@@ -372,7 +438,6 @@ function renderVitalsToDOM(data, p) {
   document.getElementById(p+"cal-burned").innerText = cleanMetric(data?.burned, ""); 
   document.getElementById(p+"p-val").innerText = cleanMetric(data?.protein, ""); 
   
-  // IDが detail-x-val と detail-x-val-log などの違いを吸収するための安全な書き込み
   const fEl = document.getElementById(p+"f-val") || document.getElementById(p+"f-val-log");
   if(fEl) fEl.innerText = cleanMetric(data?.fat, ""); 
   const cEl = document.getElementById(p+"c-val") || document.getElementById(p+"c-val-log");
@@ -581,6 +646,7 @@ function shiftDetailDay(o) { if (!currentDetailDateKey) return; const d = parseD
 
 function initDetailSwipe() { let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-day-detail"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftDetailDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }}); }
 function initLogSwipe() { let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-dashboard"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftLogDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }}); }
+
 function initCalendarSwipe() {
   let sX = 0, sY = 0; const v = document.getElementById("home-calendar-swipe-area"); if (!v) return;
   const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) { changeHomeMonth(dx > 0 ? -1 : 1); } };
@@ -594,12 +660,36 @@ function hideSavingOverlayImmediate() { document.getElementById("saving-overlay"
 
 function showError(err) { const l = document.getElementById("loading"); if(l){l.style.display = "block"; l.innerText = "エラー: " + err.message; l.style.color = "#FF453A";} }
 
+// ★修正：メニューからの遷移時にスライドアニメーションを追加
 function switchTab(t) {
   hideAllViews();
-  if (t === 'home') { document.getElementById("view-home").style.display = "block"; document.getElementById("nav-home").classList.add("active"); renderHomeCalendar(); renderWeeklySummary(); pushAppHistory({ view: 'home' }); }
-  else if (t === 'log') { document.getElementById("view-dashboard").style.display = "block"; document.getElementById("nav-log").classList.add("active"); const n = new Date(); openDashboardForDate(n.getFullYear()+'/'+(n.getMonth()+1)+'/'+n.getDate()); }
-  else if (t === 'graph') { document.getElementById("view-graph").style.display = "block"; document.getElementById("nav-graph").classList.add("active"); pushAppHistory({ view: 'graph' }); initGraphView(); }
-  else if (t === 'settings') { document.getElementById("view-settings").style.display = "block"; document.getElementById("nav-settings").classList.add("active"); pushAppHistory({ view: 'settings' }); }
+  if (t === 'home') { 
+    document.getElementById("view-home").style.display = "block"; 
+    document.getElementById("nav-home").classList.add("active"); 
+    renderHomeCalendar(); renderWeeklySummary(); pushAppHistory({ view: 'home' }); 
+  }
+  else if (t === 'log') { 
+    openDashboardForDate(formatDateKey(new Date()), false, "slide-anim-from-right"); 
+  }
+  else if (t === 'graph') { 
+    const v = document.getElementById("view-graph");
+    v.style.display = "block"; 
+    v.classList.remove("slide-anim-from-right", "slide-anim-from-left");
+    void v.offsetWidth;
+    v.classList.add("slide-anim-from-right");
+    document.getElementById("nav-graph").classList.add("active"); 
+    pushAppHistory({ view: 'graph' }); 
+    initGraphView(); 
+  }
+  else if (t === 'settings') { 
+    const v = document.getElementById("view-settings");
+    v.style.display = "block"; 
+    v.classList.remove("slide-anim-from-right", "slide-anim-from-left");
+    void v.offsetWidth;
+    v.classList.add("slide-anim-from-right");
+    document.getElementById("nav-settings").classList.add("active"); 
+    pushAppHistory({ view: 'settings' }); 
+  }
   window.scrollTo(0, 0);
 }
 
