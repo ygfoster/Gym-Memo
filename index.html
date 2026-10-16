@@ -24,6 +24,7 @@
     <div class="saving-box"><div id="saving-spinner" class="spinner"></div><div id="saving-check" class="check-icon"></div><div id="saving-text" class="saving-text">処理中...</div></div>
   </div>
 
+  <!-- 自作の削除確認モーダル -->
   <div id="delete-confirm-modal" class="custom-modal-overlay" style="display: none;">
     <div class="custom-modal">
       <div class="custom-modal-title">記録の削除</div>
@@ -87,9 +88,11 @@
         </div>
       </div>
       <div class="vitals-card">
+        <!-- ★修正：見出しを明確に -->
+        <div class="vitals-card-caption" id="detail-vitals-caption"></div>
         <div class="vitals-primary-row">
-          <div><div class="vital-metric-label">カロリー収支</div><div class="vital-balance-val" id="detail-cal-balance"></div></div>
-          <div><div class="vital-metric-label" style="text-align: right;">睡眠時間</div><div class="vital-sleep-val" id="detail-sleep-time"></div></div>
+          <div><div class="vital-metric-label">前日のカロリー収支</div><div class="vital-balance-val" id="detail-cal-balance"></div></div>
+          <div><div class="vital-metric-label" style="text-align: right;">今朝の睡眠時間</div><div class="vital-sleep-val" id="detail-sleep-time"></div></div>
         </div>
         <div class="vitals-secondary-grid">
           <div class="vital-sub-item"><div class="vital-sub-label">摂取</div><div class="vital-sub-val" id="detail-cal-intake"></div></div>
@@ -127,8 +130,9 @@
 
       <div id="dashboard-content">
         <div class="vitals-card">
-          <div class="vitals-card-caption" id="form-vitals-caption">前日のコンディション</div>
-          <div class="vitals-primary-row"><div><div class="vital-metric-label">カロリー収支</div><div class="vital-balance-val" id="cal-balance"></div></div><div><div class="vital-metric-label" style="text-align: right;">睡眠時間</div><div class="vital-sleep-val" id="sleep-time"></div></div></div>
+          <!-- ★修正：見出しを明確に -->
+          <div class="vitals-card-caption" id="form-vitals-caption"></div>
+          <div class="vitals-primary-row"><div><div class="vital-metric-label">前日のカロリー収支</div><div class="vital-balance-val" id="cal-balance"></div></div><div><div class="vital-metric-label" style="text-align: right;">今朝の睡眠時間</div><div class="vital-sleep-val" id="sleep-time"></div></div></div>
           <div class="vitals-secondary-grid">
             <div class="vital-sub-item"><div class="vital-sub-label">摂取</div><div class="vital-sub-val" id="cal-intake"></div></div>
             <div class="vital-sub-item"><div class="vital-sub-label">消費</div><div class="vital-sub-val" id="cal-burned"></div></div>
@@ -146,7 +150,6 @@
         </div>
 
         <div class="form-card" style="padding: 14px 18px; margin-bottom: 12px; overflow: visible;">
-          <!-- ★修正：システム感ゼロの完全自作プルダウン -->
           <div class="custom-dropdown" x-data="{ dropdownOpen: false }" @click.away="dropdownOpen = false">
             <div class="custom-dropdown-display" :class="{ 'active': dropdownOpen }" @click="dropdownOpen = !dropdownOpen">
                <span x-text="formPart === 'custom' ? 'その他（自由記述）' : (formPart || 'トレーニング部位を選択...')"></span>
@@ -175,7 +178,20 @@
                 </div>
                 <button type="button" class="btn-history" @click="openHistory(ex.name)" title="過去の記録を見る"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></button>
               </div>
-              <div style="margin-bottom: 10px;"><template x-for="(set, sIndex) in ex.sets"><div class="set-input-row" x-show="sIndex === 0 || ex.sets[sIndex-1].w !== '' || ex.sets[sIndex-1].r !== '' || set.w !== '' || set.r !== ''"><span class="set-badge" x-text="`#${sIndex + 1}`"></span><div class="unit-input-wrap"><input type="number" step="any" inputmode="decimal" placeholder="0" x-model="set.w" @input="saveDraft()"><span class="unit-suffix">kg</span></div><div class="set-multiply">×</div><div class="unit-input-wrap"><input type="number" step="1" inputmode="numeric" placeholder="0" x-model="set.r" @input="saveDraft()"><span class="unit-suffix">回</span></div><button type="button" class="btn-clear-set" @click="set.w=''; set.r=''; saveDraft();" title="クリア"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div></template></div>
+              <div style="margin-bottom: 10px;">
+                <template x-for="(set, sIndex) in ex.sets">
+                  <div class="set-input-row" x-show="sIndex === 0 || ex.sets[sIndex-1].w !== '' || ex.sets[sIndex-1].r !== '' || set.w !== '' || set.r !== ''">
+                    <span class="set-badge" x-text="`#${sIndex + 1}`"></span>
+                    <div class="unit-input-wrap"><input type="number" step="any" inputmode="decimal" placeholder="0" x-model="set.w" @input="saveDraft()"><span class="unit-suffix">kg</span></div>
+                    <div class="set-multiply">×</div>
+                    <div class="unit-input-wrap"><input type="number" step="1" inputmode="numeric" placeholder="0" x-model="set.r" @input="saveDraft()"><span class="unit-suffix">回</span></div>
+                    <!-- ★修正：セットのクリアボタンを赤いゴミ箱アイコンに変更 -->
+                    <button type="button" class="btn-clear-set" @click="set.w=''; set.r=''; saveDraft();" title="クリア">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                    </button>
+                  </div>
+                </template>
+              </div>
               <textarea class="textarea-field" rows="1" placeholder="メモ・フォームの意識など" style="overflow: hidden; resize: none;" x-model="ex.memo" @input="adjustTextarea($event.target); saveDraft();"></textarea>
             </div>
           </template>
@@ -200,7 +216,6 @@
     <div id="view-graph" style="display: none;">
       <div class="top-nav"><span class="nav-context-date">TRAINING DATA</span></div>
       <div class="form-card" style="padding: 14px 18px; margin: 10px 16px 20px; overflow: visible;">
-        <!-- ★追加：グラフ用の完全自作プルダウン -->
         <div class="custom-dropdown" id="graph-select-container" style="margin-bottom: 0;">
           <div class="custom-dropdown-display" onclick="toggleGraphSelect()">
             <span id="graph-select-label">グラフ化する種目を選択...</span>
@@ -228,7 +243,6 @@
     <div id="view-settings" style="display: none;" x-data="settingsForm" x-cloak>
       <div class="top-nav"><span class="nav-context-date">SETTINGS</span></div>
       
-      <!-- ★修正：タイマープリセット設定（どこに反映されるか分かりやすいUI） -->
       <div class="section-header"><span class="section-label">TIMER PRESETS</span><span class="section-hint">タイマーの初期設定時間</span></div>
       <div class="form-card" style="padding: 16px;">
         <template x-for="(preset, index) in presetList" :key="index">
