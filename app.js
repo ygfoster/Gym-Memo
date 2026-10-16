@@ -24,7 +24,6 @@ const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
 
 const DEFAULT_COLORS = { "胸": "#FF453A", "背中": "#0A84FF", "脚": "#30D158", "肩": "#FF9F0A", "腕": "#BF5AF2", "その他": "#8E8E93" };
 
-// ★修正：色が取得できなかった場合でも絶対にエラーにしないフォールバック
 let partColors = null;
 try {
   const savedColors = localStorage.getItem('workout_app_colors_v1');
@@ -173,7 +172,13 @@ document.addEventListener('alpine:init', () => {
     openHistory(exName) {
       const name = exName.trim(); if (!name) return; this.historyModal.exercise = name;
       const records = globalTrainingHistory.filter(r => (r.exercise || "").trim() === name).sort((a, b) => new Date(normalizeDateStr(b.date)) - new Date(normalizeDateStr(a.date))).map(r => { const dObj = parseDateKeyToObj(r.date); return { dateStr: `${dObj.getFullYear()}/${dObj.getMonth()+1}/${dObj.getDate()}(${DAY_LABELS_SHORT[dObj.getDay()]})`, details: r.details, memo: r.memo }; });
-      this.historyModal.records = records; this.historyModal.isOpen = true;
+      this.historyModal.records = records;
+      document.querySelector('.history-modal-overlay').classList.add('active');
+      this.historyModal.isOpen = true;
+    },
+    closeHistory() {
+      document.querySelector('.history-modal-overlay').classList.remove('active');
+      setTimeout(() => { this.historyModal.isOpen = false; }, 200);
     },
     saveDraft() { if (!currentRecordingDateStr) return; localStorage.setItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(currentRecordingDateStr), JSON.stringify({ part: this.formPart, partCustom: this.formPartCustom, exercises: this.formExercises })); this.hasDraft = true; },
     loadDraftAndRecords(dateStr) {
@@ -308,19 +313,24 @@ window.shiftLogDay = function(offset) {
   openDashboardForDate(formatDateKey(n), false, offset > 0 ? "slide-anim-from-right" : "slide-anim-from-left");
 };
 
+// ★修正：下部メニュー（LOGタブ）からのアクセスでもデータが確実に入るよう初期化ロジックを最適化
 function openDashboardForDate(tK, sH, slideClass) {
   hideAllViews(); 
   const v = document.getElementById("view-dashboard");
   v.style.display = "block"; 
   document.getElementById("nav-log").classList.add("active");
   
+  // 今日の日付をベースにする
   let dO = tK ? parseDateKeyToObj(tK) : new Date(); 
   currentRecordingDateStr = formatWithZeroPad(formatDateKey(dO)); 
   document.getElementById("recording-target-label").innerText = `${formatDisplayDateWithDay(currentRecordingDateStr)} の記録`;
+  
   const pO = new Date(dO.getFullYear(), dO.getMonth(), dO.getDate() - 1); 
   document.getElementById("form-vitals-caption").innerText = `前日 ${pO.getMonth() + 1}/${pO.getDate()} (${DAY_LABELS_SHORT[pO.getDay()]}) のコンディション`;
 
+  // 確実に対象日のデータをフェッチして表示させる
   loadHealthDataIntoPrefix(formatDateKey(pO), "");
+  
   if (window.alpineWorkoutForm) window.alpineWorkoutForm.loadDraftAndRecords(currentRecordingDateStr);
 
   const dc = document.getElementById("dashboard-content");
@@ -328,14 +338,49 @@ function openDashboardForDate(tK, sH, slideClass) {
     dc.classList.remove("slide-anim-from-right", "slide-anim-from-left");
     void dc.offsetWidth;
     dc.classList.add(slideClass);
+  } else if(dc) {
+    // 下部メニューから来た時用のアニメーション
+    dc.classList.remove("slide-anim-from-right", "slide-anim-from-left");
+    void dc.offsetWidth;
+    dc.classList.add("slide-anim-from-right"); 
   }
 
   if (!sH) pushAppHistory({ view: 'dashboard', dateKey: currentRecordingDateStr }); 
   window.scrollTo(0, 0);
 }
 
-function loadHealthDataIntoPrefix(dK, p) { const n = normalizeDateStr(dK); if (globalHealthMap[n]) { renderVitalsToDOM(globalHealthMap[n], p); } else { renderVitalsToDOM(null, p); fetch(GAS_URL + '?action=getDataForDate&date=' + formatWithZeroPad(n) + '&token=' + API_TOKEN).then(res => res.json()).then(data => { if (data && !data.error) { globalHealthMap[n] = data; renderVitalsToDOM(data, p); } }).catch(()=>{}); } }
-function renderVitalsToDOM(data, p) { document.getElementById(p+"sleep-time").innerText = cleanMetric(data?.sleep, ""); document.getElementById(p+"cal-intake").innerText = cleanMetric(data?.intake, ""); document.getElementById(p+"cal-burned").innerText = cleanMetric(data?.burned, ""); document.getElementById(p+"p-val").innerText = cleanMetric(data?.protein, ""); document.getElementById(p+"f-val").innerText = cleanMetric(data?.fat, ""); document.getElementById(p+"c-val").innerText = cleanMetric(data?.carb, ""); const d = data ? parseInt(String(data.balance).replace(/[^-0-9]/g, ""), 10) : NaN; document.getElementById(p+"cal-balance").innerText = isNaN(d) ? "" : (d > 0 ? "+" : "") + d.toLocaleString() + " kcal"; }
+function loadHealthDataIntoPrefix(dK, p) { 
+  const n = normalizeDateStr(dK); 
+  if (globalHealthMap[n]) { 
+    renderVitalsToDOM(globalHealthMap[n], p); 
+  } else { 
+    renderVitalsToDOM(null, p); 
+    fetch(GAS_URL + '?action=getDataForDate&date=' + formatWithZeroPad(n) + '&token=' + API_TOKEN)
+      .then(res => res.json())
+      .then(data => { 
+        if (data && !data.error) { 
+          globalHealthMap[n] = data; 
+          renderVitalsToDOM(data, p); 
+        } 
+      }).catch(()=>{}); 
+  } 
+}
+
+function renderVitalsToDOM(data, p) { 
+  document.getElementById(p+"sleep-time").innerText = cleanMetric(data?.sleep, ""); 
+  document.getElementById(p+"cal-intake").innerText = cleanMetric(data?.intake, ""); 
+  document.getElementById(p+"cal-burned").innerText = cleanMetric(data?.burned, ""); 
+  document.getElementById(p+"p-val").innerText = cleanMetric(data?.protein, ""); 
+  
+  // IDが detail-x-val と detail-x-val-log などの違いを吸収するための安全な書き込み
+  const fEl = document.getElementById(p+"f-val") || document.getElementById(p+"f-val-log");
+  if(fEl) fEl.innerText = cleanMetric(data?.fat, ""); 
+  const cEl = document.getElementById(p+"c-val") || document.getElementById(p+"c-val-log");
+  if(cEl) cEl.innerText = cleanMetric(data?.carb, ""); 
+  
+  const d = data ? parseInt(String(data.balance).replace(/[^-0-9]/g, ""), 10) : NaN; 
+  document.getElementById(p+"cal-balance").innerText = isNaN(d) ? "" : (d > 0 ? "+" : "") + d.toLocaleString() + " kcal"; 
+}
 
 function normalizeDateStr(s) { if (!s) return ""; const str = String(s).trim(); const n = str.match(/\d+/g); if (n && n.length >= 3) return `${parseInt(n[0],10)}/${parseInt(n[1],10)}/${parseInt(n[2],10)}`; return str; }
 function parseDateKeyToObj(s) { const n = String(s).match(/\d+/g); if (n && n.length >= 3) return new Date(parseInt(n[0],10), parseInt(n[1],10)-1, parseInt(n[2],10)); return new Date(); }
@@ -366,7 +411,6 @@ function getDateTrainedParts(dateKey, useFilter) {
   return Array.from(parts);
 }
 
-// カレンダー生成のロジック
 function renderHomeCalendar() { 
   buildCalendarGrid(currentCalYear, currentCalMonth, "home-cal-title", "home-cal-grid", false); 
   updateHomeStats(); 
@@ -403,7 +447,6 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
       if (parts.length > 0) {
         dotsHtml = '<div class="cal-dots-wrap">';
         parts.slice(0, 4).forEach(pt => {
-          // ★修正：絶対に色がundefinedにならないように保護
           let pc = partColors || DEFAULT_COLORS;
           let color = pc[pt] || pc["その他"] || '#8E8E93';
           dotsHtml += `<div class="cal-dot" style="background-color: ${color};"></div>`;
@@ -428,7 +471,6 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
   setTimeout(renderWeeklySummary, 50);
 }
 
-// 記録があるか判定
 function isDateTrained(dateKey, useFilter) {
   if (!globalTrainingHistory) return false;
   let records = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === dateKey);
@@ -473,7 +515,6 @@ window.changeHomeMonth = function(offset) {
   renderHomeCalendar(); 
 };
 
-
 /* ======================================================================
    自作モーダル（確認ダイアログ）の制御ロジック
 ====================================================================== */
@@ -482,7 +523,6 @@ function openDeleteModal(dateKey, onConfirm) {
   const targetLabel = formatDisplayDateWithDay(dateKey);
   document.getElementById("delete-confirm-msg").innerText = `${targetLabel} の記録をすべて削除しますか？`;
   document.getElementById("delete-confirm-modal").style.display = "flex";
-  // わずかな遅延でアニメーションさせる
   setTimeout(() => { document.getElementById("delete-confirm-modal").classList.add("active"); }, 10);
 }
 
@@ -498,7 +538,6 @@ window.executeDelete = function() {
   }
 }
 
-// 詳細画面からの削除関数
 window.confirmDeleteFromDetail = function() {
   if(!currentDetailDateKey) return;
   openDeleteModal(currentDetailDateKey, () => {
@@ -516,7 +555,7 @@ window.confirmDeleteFromDetail = function() {
 
 function openDayDetailView(dK, dL, fV, sC, sH) {
   if (fV) previousViewBeforeDetail = fV; currentDetailDateKey = normalizeDateStr(dK); hideAllViews(); const v = document.getElementById("view-day-detail"); v.style.display = "block";
-  if (sC) { v.classList.remove("slide-anim-from-right", "slide-anim-from-left"); void v.offsetWidth; v.classList.add(sC); }
+  if (sC) { v.classList.remove("slide-anim-from-right", "slide-anim-from-left"); void v.offsetWidth; v.classList.add(sC); } else { v.classList.add("slide-anim-from-right"); }
   document.getElementById("day-detail-title").innerText = dL || formatDisplayDateWithDay(currentDetailDateKey); loadHealthDataIntoPrefix(currentDetailDateKey, "detail-");
   const s = document.getElementById("day-summary-container"), c = document.getElementById("day-detail-content"), b = document.getElementById("day-detail-edit-btn"), del = document.getElementById("day-detail-delete-btn"); s.innerHTML = ""; c.innerHTML = "";
 
@@ -549,11 +588,12 @@ function initCalendarSwipe() {
   v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true });
 }
 
-function showSavingOverlay() { const o = document.getElementById("saving-overlay"); document.getElementById("saving-spinner").style.display="block"; document.getElementById("saving-check").style.display="none"; document.getElementById("saving-text").innerText="記録を処理中..."; o.classList.add("active"); }
-function finishSavingOverlay(cb) { document.getElementById("saving-spinner").style.display="none"; document.getElementById("saving-check").style.display="flex"; document.getElementById("saving-text").innerText="完了しました"; setTimeout(()=>{ document.getElementById("saving-overlay").classList.remove("active"); if (cb) cb(); }, 450); }
+function showSavingOverlay() { const o = document.getElementById("saving-overlay"); document.getElementById("saving-spinner").style.display="block"; document.getElementById("saving-check").style.display="none"; document.getElementById("saving-text").innerText="処理中..."; o.classList.add("active"); }
+function finishSavingOverlay(cb) { document.getElementById("saving-spinner").style.display="none"; document.getElementById("saving-check").style.display="flex"; document.getElementById("saving-text").innerText="完了しました"; setTimeout(()=>{ document.getElementById("saving-overlay").classList.remove("active"); if (cb) cb(); }, 500); }
 function hideSavingOverlayImmediate() { document.getElementById("saving-overlay").classList.remove("active"); }
 
 function showError(err) { const l = document.getElementById("loading"); if(l){l.style.display = "block"; l.innerText = "エラー: " + err.message; l.style.color = "#FF453A";} }
+
 function switchTab(t) {
   hideAllViews();
   if (t === 'home') { document.getElementById("view-home").style.display = "block"; document.getElementById("nav-home").classList.add("active"); renderHomeCalendar(); renderWeeklySummary(); pushAppHistory({ view: 'home' }); }
