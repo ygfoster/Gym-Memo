@@ -24,7 +24,6 @@
     <div class="saving-box"><div id="saving-spinner" class="spinner"></div><div id="saving-check" class="check-icon"></div><div id="saving-text" class="saving-text">処理中...</div></div>
   </div>
 
-  <!-- 自作の削除確認モーダル -->
   <div id="delete-confirm-modal" class="custom-modal-overlay" style="display: none;">
     <div class="custom-modal">
       <div class="custom-modal-title">記録の削除</div>
@@ -146,16 +145,23 @@
           </button>
         </div>
 
-        <div class="form-card" style="padding: 14px 18px; margin-bottom: 12px;">
-          <!-- カスタムセレクトボックス -->
-          <div class="custom-select-wrapper">
-            <select class="custom-select" x-model="formPart" @change="saveDraft()">
-              <option value="">トレーニング部位を選択...</option>
-              <option value="胸">胸</option><option value="背中">背中</option><option value="腕">腕</option><option value="肩">肩</option><option value="脚">脚</option><option value="custom">その他（自由記述）</option>
-            </select>
-            <svg class="custom-select-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        <div class="form-card" style="padding: 14px 18px; margin-bottom: 12px; overflow: visible;">
+          <!-- ★修正：システム感ゼロの完全自作プルダウン -->
+          <div class="custom-dropdown" x-data="{ dropdownOpen: false }" @click.away="dropdownOpen = false">
+            <div class="custom-dropdown-display" :class="{ 'active': dropdownOpen }" @click="dropdownOpen = !dropdownOpen">
+               <span x-text="formPart === 'custom' ? 'その他（自由記述）' : (formPart || 'トレーニング部位を選択...')"></span>
+               <svg class="custom-dropdown-icon" :class="{ 'rotated': dropdownOpen }" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+            </div>
+            <div class="custom-dropdown-list" x-show="dropdownOpen" x-transition.opacity.duration.200ms style="display: none;">
+               <template x-for="opt in [{v:'', l:'選択をクリア...'}, {v:'胸', l:'胸'}, {v:'背中', l:'背中'}, {v:'腕', l:'腕'}, {v:'肩', l:'肩'}, {v:'脚', l:'脚'}, {v:'custom', l:'その他（自由記述）'}]">
+                 <div class="custom-dropdown-item" @click="formPart = opt.v; dropdownOpen = false; saveDraft()">
+                   <span x-text="opt.l"></span>
+                   <svg x-show="formPart === opt.v" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                 </div>
+               </template>
+            </div>
           </div>
-          <input type="text" class="input-field" placeholder="部位を入力 (例: 胸・三頭筋)" style="margin-top: 10px;" x-show="formPart === 'custom'" x-model="formPartCustom" @input="saveDraft()">
+          <input type="text" class="input-field" placeholder="部位を入力 (例: 胸・三頭筋)" style="margin-top: 10px;" x-show="formPart === 'custom'" x-model="formPartCustom" @input="saveDraft()" x-transition>
         </div>
         
         <div>
@@ -193,13 +199,16 @@
     <!-- 4. グラフ画面 -->
     <div id="view-graph" style="display: none;">
       <div class="top-nav"><span class="nav-context-date">TRAINING DATA</span></div>
-      <div class="form-card" style="padding: 14px 18px; margin: 10px 16px 20px;">
-        <div class="custom-select-wrapper" style="margin-bottom:0;">
-          <select id="graph-exercise-select" class="custom-select" onchange="updateGraphs()">
-            <option value="">グラフ化する種目を選択...</option>
-          </select>
-          <svg class="custom-select-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      <div class="form-card" style="padding: 14px 18px; margin: 10px 16px 20px; overflow: visible;">
+        <!-- ★追加：グラフ用の完全自作プルダウン -->
+        <div class="custom-dropdown" id="graph-select-container" style="margin-bottom: 0;">
+          <div class="custom-dropdown-display" onclick="toggleGraphSelect()">
+            <span id="graph-select-label">グラフ化する種目を選択...</span>
+            <svg class="custom-dropdown-icon" id="graph-select-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </div>
+          <div class="custom-dropdown-list" id="graph-select-list" style="display:none; transition: opacity 0.2s;"></div>
         </div>
+        <input type="hidden" id="graph-exercise-select" value="">
       </div>
 
       <div class="graph-period-toggles">
@@ -219,19 +228,25 @@
     <div id="view-settings" style="display: none;" x-data="settingsForm" x-cloak>
       <div class="top-nav"><span class="nav-context-date">SETTINGS</span></div>
       
-      <!-- タイマープリセット設定 -->
+      <!-- ★修正：タイマープリセット設定（どこに反映されるか分かりやすいUI） -->
       <div class="section-header"><span class="section-label">TIMER PRESETS</span><span class="section-hint">タイマーの初期設定時間</span></div>
       <div class="form-card" style="padding: 16px;">
         <template x-for="(preset, index) in presetList" :key="index">
           <div class="preset-setting-row">
-            <input type="text" x-model="preset.label" class="input-field preset-input-label" placeholder="名前 (例: 胸)">
-            <div class="preset-time-inputs">
-              <input type="number" x-model.number="preset.min" class="input-field preset-input-time" placeholder="0"> 分
-              <input type="number" x-model.number="preset.sec" class="input-field preset-input-time" placeholder="0"> 秒
+            <div class="preset-num-badge">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+              <span x-text="`左から ${index + 1} 番目のボタン`"></span>
+            </div>
+            <div class="preset-inputs-group">
+              <input type="text" x-model="preset.label" class="input-field preset-input-label" placeholder="表示名 (例: 胸)">
+              <div class="preset-time-inputs">
+                <input type="number" x-model.number="preset.min" class="input-field preset-input-time" placeholder="0"> 分
+                <input type="number" x-model.number="preset.sec" class="input-field preset-input-time" placeholder="0"> 秒
+              </div>
             </div>
           </div>
         </template>
-        <button class="btn-secondary" style="margin-top: 12px; margin-bottom: 0;" @click="savePresets()">プリセットを保存</button>
+        <button class="btn-secondary" style="margin-top: 16px; margin-bottom: 0;" @click="savePresets()">変更を保存して反映</button>
       </div>
 
       <div class="section-header" style="margin-top: 32px;"><span class="section-label">THEME COLORS</span><span class="section-hint">カレンダーのドット色</span></div>
@@ -259,7 +274,6 @@
   <!-- ボトムシートとウィジェット -->
   <div id="timer-bottom-sheet">
     <div class="sheet-handle" onclick="closeTimerSheet()"></div><div class="sheet-title">TIMER SETTINGS</div>
-    <!-- ★変更：プリセットボタンはJSで動的に生成する -->
     <div class="preset-pills" id="timer-presets-container"></div>
     <div class="timer-circle-wrap"><div class="timer-circle-iphone stopped"><span id="sheet-rest-time">03:00</span></div></div>
     <div class="timer-adjust-row"><button class="adjust-btn" onclick="adjustRestTime(-10)">- 10s</button><button class="adjust-btn" onclick="adjustRestTime(10)">+ 10s</button></div>
