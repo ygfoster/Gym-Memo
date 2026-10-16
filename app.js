@@ -15,7 +15,8 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v1";
+// ★修正：キャッシュのバージョンを変えて、古い睡眠データ記録を強制消去する
+const DATA_CACHE_KEY = "workout_app_data_cache_v2";
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -390,7 +391,6 @@ function openDashboardForDate(tK, sH, slideClass) {
   
   const pO = new Date(dO.getFullYear(), dO.getMonth(), dO.getDate() - 1); 
   
-  // ★追加：見出しに具体的な日付を入れて区別しやすくする
   const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
   const pStr = `${pO.getMonth() + 1}/${pO.getDate()}(${DAY_LABELS_SHORT[pO.getDay()]})`;
   const capEl = document.getElementById("form-vitals-caption");
@@ -623,7 +623,6 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
   if (sC) { v.classList.remove("slide-anim-from-right", "slide-anim-from-left"); void v.offsetWidth; v.classList.add(sC); } else { v.classList.add("slide-anim-from-right"); }
   document.getElementById("day-detail-title").innerText = dL || formatDisplayDateWithDay(currentDetailDateKey); 
 
-  // ★追加：見出しに具体的な日付を入れて区別しやすくする（前日データなので pO を基準に取得）
   const dO = parseDateKeyToObj(currentDetailDateKey);
   const pO = new Date(dO.getFullYear(), dO.getMonth(), dO.getDate() - 1); 
   const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
