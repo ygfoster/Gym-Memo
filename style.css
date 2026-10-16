@@ -16,7 +16,6 @@
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 button, select, input, textarea, .clickable, .list-row, .pill-btn, .suggest-item { touch-action: manipulation; }
 
-/* 横スクロールバーの発生を完全に防ぐ */
 html, body { overflow-x: hidden; }
 
 body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Hiragino Sans", "YuGothic", sans-serif; background-color: var(--bg-base); color: var(--text-primary); margin: 0; padding: 16px 16px 180px 16px; user-select: none; -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums; overscroll-behavior-y: none; }
@@ -226,14 +225,15 @@ body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Hiragino Sans",
 
 .floating-widget { position: fixed; z-index: 1500; touch-action: none; transition: opacity var(--transition-smooth); }
 
-/* ★変更：フローティングのフォントを洗練されたInterに変更 */
+/* ★修正：フォントを極細のInterに統一 */
 #floating-total { left: 16px; bottom: 120px; background: rgba(28, 28, 30, 0.9); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); padding: 10px 18px; border-radius: 20px; border: 2px solid rgba(255,255,255,0.25); box-shadow: 0 8px 24px rgba(0,0,0,0.6); display: flex; flex-direction: column; align-items: center; }
 .floating-total-label { font-size: 0.65rem; color: var(--text-secondary); font-weight: bold; letter-spacing: 0.05em; }
-.floating-total-time { font-size: 1.2rem; font-family: 'Inter', sans-serif; color: var(--text-primary); font-weight: 300; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.floating-total-time { font-size: 1.3rem; font-family: 'Inter', sans-serif; color: var(--text-primary); font-weight: 200; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
 
 #floating-rest { right: 16px; bottom: 120px; width: 144px; height: 144px; }
 .rest-circle { width: 122px; height: 122px; background: rgba(28, 28, 30, 0.95); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border: 2px solid rgba(255,255,255,0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; position: absolute; top: 11px; left: 11px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
-#floating-rest-time { font-family: 'Inter', sans-serif; font-size: 2.4rem; font-weight: 200; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: var(--text-primary); transition: color var(--transition-smooth); }
+#floating-rest-time { font-family: 'Inter', sans-serif; font-size: 2.3rem; font-weight: 200; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; color: var(--text-primary); transition: color var(--transition-smooth); }
+
 .float-btn-play { position: absolute; left: 0; bottom: 0; width: 58px; height: 58px; background: #FFFFFF; color: #000000; border: none; border-radius: 50%; box-shadow: 0 4px 10px rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; cursor: pointer; transition: transform var(--transition-fast); }
 .float-btn-play:active { transform: scale(0.9); }
 .float-btn-play svg { width: 26px; height: 26px; } 
