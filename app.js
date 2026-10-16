@@ -28,7 +28,6 @@ try {
 } catch(e) {}
 if (!partColors || typeof partColors !== 'object') { partColors = DEFAULT_COLORS; }
 
-// ★追加：タイマープリセットの管理データ
 const DEFAULT_TIMER_PRESETS = [
   { label: "胸", seconds: 180 },
   { label: "背中", seconds: 180 },
@@ -51,9 +50,7 @@ document.addEventListener("DOMContentLoaded", function() {
   initTimerSheetSwipe();
   makeDraggable(document.getElementById('floating-total')); makeDraggable(document.getElementById('floating-rest'));
   
-  // 初期化時にプリセットボタンを生成
   renderTimerPresets();
-  
   updateTimerDisplays();
   localStorage.removeItem(STORAGE_VIEW_KEY);
   
@@ -66,7 +63,10 @@ document.addEventListener("DOMContentLoaded", function() {
       else { localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data)); initApp(data); }
     }).catch(e => { if (!cachedRaw) showError(e); });
 
-  document.addEventListener("click", e => { if (!e.target.classList.contains("exercise")) document.querySelectorAll(".suggest-box").forEach(b => b.style.display = "none"); });
+  document.addEventListener("click", e => { 
+    if (!e.target.classList.contains("exercise")) document.querySelectorAll(".suggest-box").forEach(b => b.style.display = "none"); 
+    if (!e.target.closest('#graph-select-container')) closeGraphSelect();
+  });
   syncOfflineQueue();
 });
 
@@ -114,7 +114,6 @@ document.addEventListener("visibilitychange", function() {
 let currentPresetSeconds = 180, restRemainingSeconds = 180, isResting = false, restTimerInterval = null, restEndTime = 0;
 let totalTimerInterval = null, totalStartTime = 0, totalSeconds = 0, isTotalTimerRunning = false, wakeLock = null;
 
-// ★追加：タイマー画面にプリセットボタンを動的生成
 function renderTimerPresets() {
   const container = document.getElementById('timer-presets-container');
   if(!container) return;
@@ -128,7 +127,6 @@ function renderTimerPresets() {
   timerPresets.forEach((p, idx) => {
     const btn = document.createElement('button');
     btn.className = 'pill-btn preset-btn' + (idx === 0 ? ' active' : '');
-    
     let timeStr = "";
     if (p.seconds >= 60) {
       timeStr += Math.floor(p.seconds / 60) + "分";
@@ -136,7 +134,6 @@ function renderTimerPresets() {
     } else {
       timeStr += p.seconds + "秒";
     }
-    
     btn.innerText = p.label ? `${p.label} ${timeStr}` : timeStr;
     btn.onclick = () => selectPreset(p.seconds, btn);
     container.appendChild(btn);
@@ -260,7 +257,6 @@ document.addEventListener('alpine:init', () => {
       .then(res => res.json()).then(r => { this.isSaving = false; if (r.success) { fin(r.updatedHistory); } else { hideSavingOverlayImmediate(); this.saveMsg = "エラー: " + r.error; this.saveMsgColor = "#FF453A"; } })
       .catch(e => { saveOff(); });
     },
-    
     confirmDeleteFromLog() {
       if(!currentRecordingDateStr) return;
       openDeleteModal(currentRecordingDateStr, () => {
@@ -287,7 +283,6 @@ document.addEventListener('alpine:init', () => {
     palette: ["#FF453A", "#FF9F0A", "#FFD60A", "#30D158", "#66D4CF", "#0A84FF", "#5E5CE6", "#BF5AF2", "#FF375F", "#8E8E93", "#FFFFFF"],
     activePart: null,
     
-    // ★追加：タイマープリセット編集用データ
     presetList: timerPresets.map(p => ({ label: p.label, min: Math.floor(p.seconds / 60), sec: p.seconds % 60 })),
     
     openPalette(part) { this.activePart = this.activePart === part ? null : part; },
@@ -297,24 +292,24 @@ document.addEventListener('alpine:init', () => {
       localStorage.setItem('workout_app_colors_v1', JSON.stringify(this.colors)); renderHomeCalendar();
     },
     savePresets() {
-      // 編集した分・秒をsecondsに変換してグローバルに保存
       timerPresets = this.presetList.map(p => ({
-        label: p.label.trim(),
+        label: String(p.label).trim(),
         seconds: (parseInt(p.min) || 0) * 60 + (parseInt(p.sec) || 0)
       }));
       localStorage.setItem('workout_app_timer_presets_v1', JSON.stringify(timerPresets));
-      renderTimerPresets(); // タイマー画面の再生成
+      renderTimerPresets();
       
-      // 保存完了の簡単なフィードバック
       const btn = document.querySelector('.btn-secondary');
       const originalText = btn.innerText;
       btn.innerText = "保存しました！";
       btn.style.backgroundColor = "#30D158";
       btn.style.color = "#000000";
+      btn.style.borderColor = "#30D158";
       setTimeout(() => {
         btn.innerText = originalText;
         btn.style.backgroundColor = "";
         btn.style.color = "";
+        btn.style.borderColor = "";
       }, 1500);
     }
   }));
@@ -660,7 +655,6 @@ function hideSavingOverlayImmediate() { document.getElementById("saving-overlay"
 
 function showError(err) { const l = document.getElementById("loading"); if(l){l.style.display = "block"; l.innerText = "エラー: " + err.message; l.style.color = "#FF453A";} }
 
-// ★修正：メニューからの遷移時にスライドアニメーションを追加
 function switchTab(t) {
   hideAllViews();
   if (t === 'home') { 
@@ -697,14 +691,57 @@ let rmChartInstance = null; let volumeChartInstance = null;
 let currentGraphPeriod = 'ALL';
 window.setGraphPeriod = function(period) { currentGraphPeriod = period; document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active')); document.getElementById('period-btn-' + period).classList.add('active'); updateGraphs(); };
 
+/* ★追加：グラフ画面の自作ドロップダウン制御ロジック */
+window.toggleGraphSelect = function() {
+  const list = document.getElementById('graph-select-list');
+  const icon = document.getElementById('graph-select-icon');
+  if (list.style.display === 'none') {
+      list.style.display = 'block';
+      setTimeout(() => { list.style.opacity = '1'; list.style.transform = 'translateY(0)'; }, 10);
+      icon.classList.add('rotated');
+  } else {
+      closeGraphSelect();
+  }
+}
+window.closeGraphSelect = function() {
+  const list = document.getElementById('graph-select-list');
+  if(!list || list.style.display === 'none') return;
+  document.getElementById('graph-select-icon').classList.remove('rotated');
+  list.style.opacity = '0';
+  list.style.transform = 'translateY(-10px)';
+  setTimeout(() => list.style.display = 'none', 200);
+}
+window.selectGraphExercise = function(val, label) {
+  document.getElementById('graph-exercise-select').value = val;
+  document.getElementById('graph-select-label').innerText = label;
+  closeGraphSelect();
+  updateGraphs();
+}
+
 function initGraphView() {
-  const sel = document.getElementById("graph-exercise-select"); const cV = sel.value;
+  const selVal = document.getElementById("graph-exercise-select").value;
   const pm = { "胸": new Set(), "背中": new Set(), "脚": new Set(), "肩": new Set(), "腕": new Set(), "その他": new Set() };
   globalTrainingHistory.forEach(r => { const ex = String(r.exercise || "").trim(); let pt = String(r.part || "").trim(); if (!ex || ex === "種目不明") return; if (pt === "足") pt = "脚"; if (!["胸", "背中", "脚", "肩", "腕"].includes(pt)) pt = "その他"; pm[pt].add(ex); });
-  let h = '<option value="">グラフ化する種目を選択...</option>';
-  ["胸", "背中", "脚", "肩", "腕", "その他"].forEach(p => { const exs = Array.from(pm[p]).sort(); if (exs.length > 0) { h += `<optgroup label="【${p}】">`; exs.forEach(ex => { h += `<option value="${ex}">${ex}</option>`; }); h += `</optgroup>`; } });
-  sel.innerHTML = h; if (cV && Array.from(sel.options).some(o => o.value === cV)) { sel.value = cV; updateGraphs(); } else clearGraphs();
+  
+  let h = `<div class="custom-dropdown-item" onclick="selectGraphExercise('', '選択をクリア...')"><span>選択をクリア...</span></div>`;
+  ["胸", "背中", "脚", "肩", "腕", "その他"].forEach(p => { 
+    const exs = Array.from(pm[p]).sort(); 
+    if (exs.length > 0) { 
+      h += `<div class="custom-dropdown-optgroup">【${p}】</div>`; 
+      exs.forEach(ex => { 
+        h += `<div class="custom-dropdown-item sub-item" onclick="selectGraphExercise('${ex}', '${ex}')"><span>${ex}</span></div>`; 
+      }); 
+    } 
+  });
+  document.getElementById("graph-select-list").innerHTML = h; 
+  if (selVal && Array.from(pm).some(partSet => partSet.has(selVal))) { 
+    updateGraphs(); 
+  } else { 
+    document.getElementById('graph-select-label').innerText = 'グラフ化する種目を選択...';
+    clearGraphs(); 
+  }
 }
+
 function clearGraphs() { if (rmChartInstance) rmChartInstance.destroy(); if (volumeChartInstance) volumeChartInstance.destroy(); }
 function updateGraphs() {
   const tE = document.getElementById("graph-exercise-select").value; if (!tE) { clearGraphs(); return; }
