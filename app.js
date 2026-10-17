@@ -21,7 +21,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v16";
+const DATA_CACHE_KEY = "workout_app_data_cache_v17"; // ★キャッシュリセット
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -272,7 +272,7 @@ document.addEventListener('alpine:init', () => {
         const qR = localStorage.getItem(OFFLINE_QUEUE_KEY); let q = qR ? JSON.parse(qR) : []; q.push({ id: Date.now(), payload: payload }); localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q));
         globalTrainingHistory = globalTrainingHistory.filter(r => normalizeDateStr(r.date) !== normalizeDateStr(tD)); tData.forEach(d => globalTrainingHistory.push(d));
         const cR = localStorage.getItem(DATA_CACHE_KEY); if (cR) { let cD = JSON.parse(cR); cD.trainingHistory = globalTrainingHistory; localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cD)); }
-        document.getElementById("saving-text").innerText = "オフライン保存しました"; setTimeout(() => { this.isSaving = false; fin(null); }, 1200);
+        setTimeout(() => { this.isSaving = false; fin(null); }, 1200);
       };
       
       if (!navigator.onLine) { saveOff(); return; }
@@ -416,7 +416,7 @@ function openDashboardForDate(tK, sH, slideClass) {
   const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
   const pStr = `${pO.getMonth() + 1}/${pO.getDate()}(${DAY_LABELS_SHORT[pO.getDay()]})`;
   const capEl = document.getElementById("form-vitals-caption");
-  if (capEl) capEl.innerText = `栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
+  if (capEl) capEl.innerText = `前日の栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
 
   loadHealthDataIntoPrefix(formatDateKey(pO), "");
   
@@ -678,8 +678,23 @@ function initCalendarSwipe() {
   v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true });
 }
 
-function showSavingOverlay() { const o = document.getElementById("saving-overlay"); document.getElementById("saving-spinner").style.display="block"; document.getElementById("saving-check").style.display="none"; document.getElementById("saving-text").innerText="処理中..."; o.classList.add("active"); }
-function finishSavingOverlay(cb) { document.getElementById("saving-spinner").style.display="none"; document.getElementById("saving-check").style.display="flex"; document.getElementById("saving-text").innerText="完了しました"; setTimeout(()=>{ document.getElementById("saving-overlay").classList.remove("active"); if (cb) cb(); }, 500); }
+/* ★修正：保存時の達成感アニメーションを表示 */
+function showSavingOverlay() { 
+  const o = document.getElementById("saving-overlay"); 
+  document.getElementById("saving-spinner").style.display="block"; 
+  document.getElementById("saving-check").style.display="none"; 
+  document.getElementById("saving-text").innerText="SAVING..."; 
+  o.classList.add("active"); 
+}
+function finishSavingOverlay(cb) { 
+  document.getElementById("saving-spinner").style.display="none"; 
+  document.getElementById("saving-check").style.display="flex"; 
+  document.getElementById("saving-text").innerText="COMPLETE!"; 
+  setTimeout(()=>{ 
+    document.getElementById("saving-overlay").classList.remove("active"); 
+    if (cb) cb(); 
+  }, 1000); 
+}
 function hideSavingOverlayImmediate() { document.getElementById("saving-overlay").classList.remove("active"); }
 
 function showError(err) { 
@@ -783,6 +798,8 @@ function initGraphView() {
 }
 
 function clearGraphs() { if (rmChartInstance) rmChartInstance.destroy(); if (volumeChartInstance) volumeChartInstance.destroy(); }
+
+/* ★修正：グラフ描画時のアニメーション追加 */
 function updateGraphs() {
   const tE = document.getElementById("graph-exercise-select").value; if (!tE) { clearGraphs(); return; }
   let records = globalTrainingHistory.filter(r => r.date && String(r.exercise).trim() === tE).sort((a,b) => new Date(normalizeDateStr(a.date)) - new Date(normalizeDateStr(b.date)));
@@ -798,6 +815,14 @@ function updateGraphs() {
 function drawChart(cId, lbl, lbls, d, c) {
   const ctx = document.getElementById(cId).getContext('2d');
   if (cId === 'rmChart' && rmChartInstance) rmChartInstance.destroy(); if (cId === 'volumeChart' && volumeChartInstance) volumeChartInstance.destroy();
-  const cfg = { type: 'line', data: { labels: lbls, datasets: [{ label: lbl, data: d, borderColor: c, backgroundColor: c+'33', borderWidth: 2, pointBackgroundColor: c, pointRadius: 4, fill: true, tension: 0.3 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1C1C1E', titleFont: { size: 13, family: 'Inter' }, bodyFont: { size: 14, weight: 'bold', family: 'Oswald' }, padding: 10, displayColors: false } }, scales: { x: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8E8E93', font: { family: 'Inter' } } }, y: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8E8E93', font: { family: 'Oswald' } } } } } };
+  const cfg = { 
+    type: 'line', 
+    data: { labels: lbls, datasets: [{ label: lbl, data: d, borderColor: c, backgroundColor: c+'33', borderWidth: 2, pointBackgroundColor: c, pointRadius: 4, fill: true, tension: 0.3 }] }, 
+    options: { 
+      responsive: true, maintainAspectRatio: false, 
+      animation: { duration: 800, easing: 'easeOutQuart' }, /* ★追加：ダイナミックな描画アニメーション */
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1C1C1E', titleFont: { size: 13, family: 'Inter' }, bodyFont: { size: 14, weight: 'bold', family: 'Oswald' }, padding: 10, displayColors: false } }, 
+      scales: { x: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8E8E93', font: { family: 'Inter' } } }, y: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8E8E93', font: { family: 'Oswald' } } } } } 
+  };
   if (cId === 'rmChart') rmChartInstance = new Chart(ctx, cfg); else volumeChartInstance = new Chart(ctx, cfg);
 }
