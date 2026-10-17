@@ -21,7 +21,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v16"; // ★キャッシュリセット
+const DATA_CACHE_KEY = "workout_app_data_cache_v16";
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -242,11 +242,8 @@ document.addEventListener('alpine:init', () => {
         rs.forEach(r => { const sets = Array.from({ length: 5 }, () => ({ w: '', r: '' })); const parsed = parseDetailsToSets(r.details); parsed.forEach((s, i) => { if (i < 5) { sets[i].w = s.w; sets[i].r = s.r; } }); this.addExercise({ name: r.exercise, memo: r.memo, sets: sets }); });
       }
     },
-
-    // ★修正：コンディションデータ（睡眠・カロリー等）も一緒に保存するためpayloadに含める
     saveTraining() {
-      const tD = currentRecordingDateStr || formatWithZeroPad(formatDateKey(new Date())); 
-      const gP = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart;
+      const tD = currentRecordingDateStr || formatWithZeroPad(formatDateKey(new Date())); const gP = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart;
       if (!gP) { this.saveMsg = "部位を選択してください"; this.saveMsgColor = "#FF453A"; return; }
       const tData = [];
       this.formExercises.forEach(ex => {
@@ -258,7 +255,6 @@ document.addEventListener('alpine:init', () => {
       
       this.isSaving = true; this.saveMsg = ""; showSavingOverlay();
 
-      // 現在画面に表示されているコンディションデータを取得
       const conditionData = {
         sleep: document.getElementById("sleep-time") ? document.getElementById("sleep-time").innerText : "",
         balance: document.getElementById("cal-balance") ? document.getElementById("cal-balance").innerText : "",
@@ -269,13 +265,7 @@ document.addEventListener('alpine:init', () => {
         carb: document.getElementById("c-val-log") ? document.getElementById("c-val-log").innerText : ""
       };
 
-      const payload = { 
-        action: 'saveTrainingLog', 
-        targetDate: tD, 
-        trainingData: tData, 
-        conditionData: conditionData, // サーバーに送る
-        token: API_TOKEN 
-      };
+      const payload = { action: 'saveTrainingLog', targetDate: tD, trainingData: tData, conditionData: conditionData, token: API_TOKEN };
 
       const fin = (uH) => { if (uH) globalTrainingHistory = uH; localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(tD)); this.hasDraft = false; finishSavingOverlay(() => { openHomeView(); }); };
       const saveOff = () => {
@@ -494,17 +484,6 @@ function updateHomeStats() {
   if(document.getElementById("home-total-days")) document.getElementById("home-total-days").innerText = ud.size;
 }
 
-// ★修正：エラーの原因だった関数を復活
-function isDateTrained(dateKey, useFilter) {
-  if (!globalTrainingHistory) return false;
-  let records = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === dateKey);
-  if (!useFilter || activeFilters.length === 0) return records.length > 0;
-  return records.some(r => activeFilters.some(f => {
-      let pt = String(r.part || "").trim();
-      return pt.includes(f) || (f==="脚" && pt.includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(pt));
-  }));
-}
-
 function getDateTrainedParts(dateKey, useFilter) {
   const records = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === dateKey);
   let filtered = records;
@@ -569,6 +548,16 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
   }
   gridEl.appendChild(frag);
   setTimeout(renderWeeklySummary, 50);
+}
+
+function isDateTrained(dateKey, useFilter) {
+  if (!globalTrainingHistory) return false;
+  let records = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === dateKey);
+  if (!useFilter || activeFilters.length === 0) return records.length > 0;
+  return records.some(r => activeFilters.some(f => {
+      let pt = String(r.part || "").trim();
+      return pt.includes(f) || (f==="脚" && pt.includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(pt));
+  }));
 }
 
 function renderWeeklySummary() {
@@ -657,7 +646,11 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
 
   const rs = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === currentDetailDateKey);
   if (rs.length === 0) {
-    s.style.display = "none"; c.innerHTML = `<div class="empty-state"><div class="empty-state-title">トレーニング記録がありません</div></div>`; b.innerText = "この日のワークアウトを記録"; if(del) del.style.display = "none";
+    s.style.display = "none"; c.innerHTML = `<div class="empty-state">
+      <svg class="empty-state-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+      <div class="empty-state-title">記録がありません</div>
+      <div class="empty-state-sub">＋ボタンから<br>最初のワークアウトを追加しましょう</div>
+    </div>`; b.innerText = "この日のワークアウトを記録"; if(del) del.style.display = "none";
   } else {
     b.innerText = "この日の記録を編集・追加"; if(del) del.style.display = "inline-flex";
     const parts = [...new Set(rs.map(r => String(r.part || "未指定").trim()))].join("・") + "の日"; let vol = 0, sets = 0;
