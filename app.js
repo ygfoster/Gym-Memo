@@ -1,3 +1,11 @@
+if ('serviceWorker' in navigator) { 
+  window.addEventListener('load', () => { 
+    navigator.serviceWorker.register('./sw.js').then(reg => {
+      reg.update();
+    }).catch(()=>{}); 
+  }); 
+}
+
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwTreNAF4AVwdAFRIdeVIqR4dYn87RgbSP0-u-0n3_90oCl_7ZlBlwADXWUvCsv4kELrg/exec';
 const API_TOKEN = "MyGymAppSecretToken_2026";
 
@@ -13,7 +21,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v200"; // ★強制リセット
+const DATA_CACHE_KEY = "workout_app_data_cache_v201"; // キャッシュ更新
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -40,13 +48,13 @@ try {
 } catch(e) {}
 if (!timerPresets || !Array.isArray(timerPresets) || timerPresets.length === 0) { timerPresets = DEFAULT_TIMER_PRESETS; }
 
-// ★追加：ハプティックフィードバック（触覚）
+// ハプティックフィードバック
 window.vibrateSmall = function() { if(navigator.vibrate) navigator.vibrate(10); };
 window.vibrateMedium = function() { if(navigator.vibrate) navigator.vibrate(20); };
 window.vibrateSuccess = function() { if(navigator.vibrate) navigator.vibrate([15, 50, 20]); };
 window.vibrateError = function() { if(navigator.vibrate) navigator.vibrate([20, 30, 20, 30, 30]); };
 
-// ★追加：美しいトースト通知
+// トースト通知
 window.showToast = function(message, type = 'success') {
   const container = document.getElementById('toast-container');
   if(!container) return;
@@ -84,26 +92,26 @@ document.addEventListener("DOMContentLoaded", function() {
   updateTimerDisplays();
   localStorage.removeItem(STORAGE_VIEW_KEY);
   
-  // ★完全修正：Stale-while-revalidate（キャッシュを0秒で表示して、裏で通信）
+  // ★修正箇所：キャッシュが無くても必ず空データで画面の枠組み(カレンダー)を描画させる
   const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
   if (cachedRaw) { 
     try { 
       initApp(JSON.parse(cachedRaw)); 
-    } catch(e) {} 
+    } catch(e) {
+      initApp(null); 
+    } 
   } else {
-    // キャッシュがない初回のみローディングを小さく出す
     document.getElementById("loading").style.display = "block";
+    initApp(null); // ← これが抜けていたため画面が真っ暗になっていました！
   }
 
-  // 裏で静かに最新データを取得
   fetchWithTimeout(GAS_URL + '?action=getInitialData&limit=45&offset=0&token=' + API_TOKEN, {}, 15000)
     .then(r => r.json()).then(data => {
       document.getElementById("loading").style.display = "none";
       if(data.error) { 
-        showToast("データの同期に失敗しました", 'error');
+        showToast("同期エラー: " + data.error, 'error');
       } else { 
         localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data)); 
-        // 差分だけサイレントに更新する（再描画）
         globalTrainingHistory = data.trainingHistory || [];
         globalHealthMap = {};
         if (data.healthHistory) data.healthHistory.forEach(i => { if(i.date) globalHealthMap[normalizeDateStr(i.date)] = i; });
@@ -212,7 +220,7 @@ async function startRestTimer() {
     let rem = Math.ceil((restEndTime - Date.now()) / 1000);
     if (rem > 0) { restRemainingSeconds = rem; updateTimerDisplays(); } else {
       clearInterval(restTimerInterval); isResting = false; restRemainingSeconds = 0; updateTimerDisplays();
-      vibrateSuccess(); // タイマー完了時のハプティクス
+      vibrateSuccess(); 
       if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
       setTimeout(() => { resetRestTimer(); }, 1000);
     }
@@ -582,6 +590,16 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
   setTimeout(renderWeeklySummary, 50);
 }
 
+function isDateTrained(dateKey, useFilter) {
+  if (!globalTrainingHistory) return false;
+  let records = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === dateKey);
+  if (!useFilter || activeFilters.length === 0) return records.length > 0;
+  return records.some(r => activeFilters.some(f => {
+      let pt = String(r.part || "").trim();
+      return pt.includes(f) || (f==="脚" && pt.includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(pt));
+  }));
+}
+
 function renderWeeklySummary() {
   const c = document.getElementById("weekly-list"); 
   if(!c) return;
@@ -664,7 +682,7 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
   const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
   const pStr = `${pO.getMonth() + 1}/${pO.getDate()}(${DAY_LABELS_SHORT[pO.getDay()]})`;
   const capEl = document.getElementById("detail-vitals-caption");
-  if (capEl) capEl.innerText = `前日の栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
+  if (capEl) capEl.innerText = `栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
 
   loadHealthDataIntoPrefix(formatDateKey(pO), "detail-");
   
