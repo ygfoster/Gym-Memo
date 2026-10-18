@@ -21,7 +21,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v201"; // キャッシュ更新
+const DATA_CACHE_KEY = "workout_app_data_cache_v202"; // キャッシュ更新
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -48,13 +48,18 @@ try {
 } catch(e) {}
 if (!timerPresets || !Array.isArray(timerPresets) || timerPresets.length === 0) { timerPresets = DEFAULT_TIMER_PRESETS; }
 
-// ハプティックフィードバック
+// ★修正：タイマー終了時の5回バイブレーションを追加
 window.vibrateSmall = function() { if(navigator.vibrate) navigator.vibrate(10); };
 window.vibrateMedium = function() { if(navigator.vibrate) navigator.vibrate(20); };
+window.vibrateTimerEnd = function() { 
+  if(navigator.vibrate) {
+    // 500ms振動して200ms休む、を5回繰り返す（ブー、ブー、ブー、ブー、ブー）
+    navigator.vibrate([500, 200, 500, 200, 500, 200, 500, 200, 500]);
+  }
+};
 window.vibrateSuccess = function() { if(navigator.vibrate) navigator.vibrate([15, 50, 20]); };
 window.vibrateError = function() { if(navigator.vibrate) navigator.vibrate([20, 30, 20, 30, 30]); };
 
-// トースト通知
 window.showToast = function(message, type = 'success') {
   const container = document.getElementById('toast-container');
   if(!container) return;
@@ -92,17 +97,12 @@ document.addEventListener("DOMContentLoaded", function() {
   updateTimerDisplays();
   localStorage.removeItem(STORAGE_VIEW_KEY);
   
-  // ★修正箇所：キャッシュが無くても必ず空データで画面の枠組み(カレンダー)を描画させる
   const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
   if (cachedRaw) { 
-    try { 
-      initApp(JSON.parse(cachedRaw)); 
-    } catch(e) {
-      initApp(null); 
-    } 
+    try { initApp(JSON.parse(cachedRaw)); } catch(e) { initApp(null); } 
   } else {
     document.getElementById("loading").style.display = "block";
-    initApp(null); // ← これが抜けていたため画面が真っ暗になっていました！
+    initApp(null);
   }
 
   fetchWithTimeout(GAS_URL + '?action=getInitialData&limit=45&offset=0&token=' + API_TOKEN, {}, 15000)
@@ -211,16 +211,27 @@ function adjustRestTime(a) { vibrateSmall(); restRemainingSeconds += a; if (rest
 function resetRestTimer() { vibrateSmall(); pauseRestTimer(); restRemainingSeconds = currentPresetSeconds; updateTimerDisplays(); }
 function toggleRestTimer() { vibrateMedium(); if (isResting) pauseRestTimer(); else startRestTimer(); }
 function pauseRestTimer() { isResting = false; clearInterval(restTimerInterval); if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null); updateTimerDisplays(); }
+
 async function startRestTimer() {
   if (restRemainingSeconds <= 0) return; isResting = true; restEndTime = Date.now() + (restRemainingSeconds * 1000);
   if (!isTotalTimerRunning) { isTotalTimerRunning = true; totalStartTime = Date.now() - (totalSeconds * 1000); totalTimerInterval = setInterval(() => { totalSeconds = Math.floor((Date.now() - totalStartTime) / 1000); document.getElementById("floating-total-time").innerText = formatTime(totalSeconds); }, 1000); }
   try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
   updateTimerDisplays();
+  
   restTimerInterval = setInterval(() => {
     let rem = Math.ceil((restEndTime - Date.now()) / 1000);
-    if (rem > 0) { restRemainingSeconds = rem; updateTimerDisplays(); } else {
-      clearInterval(restTimerInterval); isResting = false; restRemainingSeconds = 0; updateTimerDisplays();
-      vibrateSuccess(); 
+    if (rem > 0) { 
+      restRemainingSeconds = rem; 
+      updateTimerDisplays(); 
+    } else {
+      clearInterval(restTimerInterval); 
+      isResting = false; 
+      restRemainingSeconds = 0; 
+      updateTimerDisplays();
+      
+      // ★修正：タイマー終了時に長い5回のバイブレーションを実行
+      vibrateTimerEnd();
+      
       if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
       setTimeout(() => { resetRestTimer(); }, 1000);
     }
