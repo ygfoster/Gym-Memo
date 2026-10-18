@@ -1,11 +1,3 @@
-if ('serviceWorker' in navigator) { 
-  window.addEventListener('load', () => { 
-    navigator.serviceWorker.register('./sw.js').then(reg => {
-      reg.update();
-    }).catch(()=>{}); 
-  }); 
-}
-
 const GAS_URL = 'https://script.google.com/macros/s/AKfycbwTreNAF4AVwdAFRIdeVIqR4dYn87RgbSP0-u-0n3_90oCl_7ZlBlwADXWUvCsv4kELrg/exec';
 const API_TOKEN = "MyGymAppSecretToken_2026";
 
@@ -21,7 +13,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v21";
+const DATA_CACHE_KEY = "workout_app_data_cache_v200"; // ★強制リセット
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -48,6 +40,29 @@ try {
 } catch(e) {}
 if (!timerPresets || !Array.isArray(timerPresets) || timerPresets.length === 0) { timerPresets = DEFAULT_TIMER_PRESETS; }
 
+// ★追加：ハプティックフィードバック（触覚）
+window.vibrateSmall = function() { if(navigator.vibrate) navigator.vibrate(10); };
+window.vibrateMedium = function() { if(navigator.vibrate) navigator.vibrate(20); };
+window.vibrateSuccess = function() { if(navigator.vibrate) navigator.vibrate([15, 50, 20]); };
+window.vibrateError = function() { if(navigator.vibrate) navigator.vibrate([20, 30, 20, 30, 30]); };
+
+// ★追加：美しいトースト通知
+window.showToast = function(message, type = 'success') {
+  const container = document.getElementById('toast-container');
+  if(!container) return;
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = type === 'error' 
+    ? `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg><span>${message}</span>`
+    : `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#30D158" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg><span>${message}</span>`;
+  container.appendChild(toast);
+  setTimeout(() => toast.classList.add('show'), 10);
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+};
+
 const fetchWithTimeout = (url, options, timeout = 15000) => {
   return Promise.race([
     fetch(url, options),
@@ -62,7 +77,6 @@ document.addEventListener("DOMContentLoaded", function() {
   initCalendarSwipe(); 
   initTimerSheetSwipe();
   
-  // ★修正：初期位置を左側に設定（左：TOTAL、少し上にTIMER）
   makeDraggable(document.getElementById('floating-total')); 
   makeDraggable(document.getElementById('floating-rest'));
   
@@ -70,19 +84,35 @@ document.addEventListener("DOMContentLoaded", function() {
   updateTimerDisplays();
   localStorage.removeItem(STORAGE_VIEW_KEY);
   
+  // ★完全修正：Stale-while-revalidate（キャッシュを0秒で表示して、裏で通信）
   const cachedRaw = localStorage.getItem(DATA_CACHE_KEY);
-  if (cachedRaw) { try { initApp(JSON.parse(cachedRaw)); } catch(e) {} }
+  if (cachedRaw) { 
+    try { 
+      initApp(JSON.parse(cachedRaw)); 
+    } catch(e) {} 
+  } else {
+    // キャッシュがない初回のみローディングを小さく出す
+    document.getElementById("loading").style.display = "block";
+  }
 
+  // 裏で静かに最新データを取得
   fetchWithTimeout(GAS_URL + '?action=getInitialData&limit=45&offset=0&token=' + API_TOKEN, {}, 15000)
     .then(r => r.json()).then(data => {
+      document.getElementById("loading").style.display = "none";
       if(data.error) { 
-        showError(new Error(data.error)); 
+        showToast("データの同期に失敗しました", 'error');
       } else { 
         localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data)); 
-        initApp(data); 
+        // 差分だけサイレントに更新する（再描画）
+        globalTrainingHistory = data.trainingHistory || [];
+        globalHealthMap = {};
+        if (data.healthHistory) data.healthHistory.forEach(i => { if(i.date) globalHealthMap[normalizeDateStr(i.date)] = i; });
+        const cV = getCurrentVisibleView();
+        if (cV === 'home') { renderHomeCalendar(); renderWeeklySummary(); }
       }
     }).catch(e => { 
-      showError(e); 
+      document.getElementById("loading").style.display = "none";
+      showToast("オフラインモードで動作中です", 'error');
     });
 
   document.addEventListener("click", e => { 
@@ -92,7 +122,8 @@ document.addEventListener("DOMContentLoaded", function() {
   syncOfflineQueue();
 });
 
-window.addEventListener('online', syncOfflineQueue);
+window.addEventListener('online', () => { showToast('オンラインに復帰しました'); syncOfflineQueue(); });
+window.addEventListener('offline', () => { showToast('オフラインになりました', 'error'); });
 
 async function syncOfflineQueue() {
   if (!navigator.onLine) return; 
@@ -101,6 +132,8 @@ async function syncOfflineQueue() {
   if (queue.length === 0) return;
   if (window.isSyncing) return; window.isSyncing = true;
   let remainingQueue = [...queue];
+
+  showToast('オフライン時の記録を同期中...');
 
   for (let i = 0; i < queue.length; i++) {
     const item = queue[i];
@@ -118,7 +151,11 @@ async function syncOfflineQueue() {
     } catch (e) { break; } 
   }
   localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(remainingQueue)); window.isSyncing = false;
-  if (queue.length !== remainingQueue.length) { initApp(null); }
+  if (queue.length !== remainingQueue.length) { 
+    showToast('同期が完了しました');
+    const cV = getCurrentVisibleView();
+    if (cV === 'home') { renderHomeCalendar(); renderWeeklySummary(); }
+  }
 }
 
 document.addEventListener("visibilitychange", function() {
@@ -147,7 +184,7 @@ function renderTimerPresets() {
     let timeStr = "";
     if (p.seconds >= 60) { timeStr += Math.floor(p.seconds / 60) + "分"; if (p.seconds % 60 > 0) timeStr += (p.seconds % 60) + "秒"; } else { timeStr += p.seconds + "秒"; }
     btn.innerText = p.label ? `${p.label} ${timeStr}` : timeStr;
-    btn.onclick = () => selectPreset(p.seconds, btn);
+    btn.onclick = () => { vibrateSmall(); selectPreset(p.seconds, btn); };
     container.appendChild(btn);
   });
   updateTimerDisplays();
@@ -162,9 +199,9 @@ function updateTimerDisplays() {
   else { pbS.innerText = "Start"; pbS.className = "sheet-circle-btn play"; pbF.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>`; cI.className = "timer-circle-iphone stopped"; }
 }
 function selectPreset(s, b) { pauseRestTimer(); currentPresetSeconds = s; restRemainingSeconds = s; document.querySelectorAll('.preset-btn').forEach(e => e.classList.remove('active')); b.classList.add('active'); updateTimerDisplays(); }
-function adjustRestTime(a) { restRemainingSeconds += a; if (restRemainingSeconds < 0) restRemainingSeconds = 0; if (isResting) restEndTime += a * 1000; updateTimerDisplays(); }
-function resetRestTimer() { pauseRestTimer(); restRemainingSeconds = currentPresetSeconds; updateTimerDisplays(); }
-function toggleRestTimer() { if (isResting) pauseRestTimer(); else startRestTimer(); }
+function adjustRestTime(a) { vibrateSmall(); restRemainingSeconds += a; if (restRemainingSeconds < 0) restRemainingSeconds = 0; if (isResting) restEndTime += a * 1000; updateTimerDisplays(); }
+function resetRestTimer() { vibrateSmall(); pauseRestTimer(); restRemainingSeconds = currentPresetSeconds; updateTimerDisplays(); }
+function toggleRestTimer() { vibrateMedium(); if (isResting) pauseRestTimer(); else startRestTimer(); }
 function pauseRestTimer() { isResting = false; clearInterval(restTimerInterval); if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null); updateTimerDisplays(); }
 async function startRestTimer() {
   if (restRemainingSeconds <= 0) return; isResting = true; restEndTime = Date.now() + (restRemainingSeconds * 1000);
@@ -175,7 +212,7 @@ async function startRestTimer() {
     let rem = Math.ceil((restEndTime - Date.now()) / 1000);
     if (rem > 0) { restRemainingSeconds = rem; updateTimerDisplays(); } else {
       clearInterval(restTimerInterval); isResting = false; restRemainingSeconds = 0; updateTimerDisplays();
-      if (navigator.vibrate) navigator.vibrate([500, 500, 500, 500, 500, 500, 500, 500, 500]); 
+      vibrateSuccess(); // タイマー完了時のハプティクス
       if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
       setTimeout(() => { resetRestTimer(); }, 1000);
     }
@@ -246,17 +283,18 @@ document.addEventListener('alpine:init', () => {
       }
     },
     saveTraining() {
+      vibrateMedium();
       const tD = currentRecordingDateStr || formatWithZeroPad(formatDateKey(new Date())); const gP = this.formPart === 'custom' ? this.formPartCustom.trim() : this.formPart;
-      if (!gP) { this.saveMsg = "部位を選択してください"; this.saveMsgColor = "#FF453A"; return; }
+      if (!gP) { showToast("部位を選択してください", 'error'); vibrateError(); return; }
       const tData = [];
       this.formExercises.forEach(ex => {
         const n = ex.name.trim(); const m = ex.memo.trim(); let sT = ""; let hS = false;
         ex.sets.forEach((s, i) => { const w = String(s.w).trim(); const r = String(s.r).trim(); if (w || r) { sT += `${i+1}セット目: ${w ? w+'kg' : '-'} × ${r ? r+'回' : '-'}\n`; hS = true; } });
         if (n || hS || m) { tData.push({ date: tD, part: gP, exercise: n || "種目不明", details: sT.trim(), memo: m }); }
       });
-      if (tData.length === 0) { this.saveMsg = "内容を入力してください"; this.saveMsgColor = "#FF453A"; return; }
+      if (tData.length === 0) { showToast("内容を入力してください", 'error'); vibrateError(); return; }
       
-      this.isSaving = true; this.saveMsg = ""; showSavingOverlay();
+      this.isSaving = true; showSavingOverlay();
 
       const conditionData = {
         sleep: document.getElementById("sleep-time") ? document.getElementById("sleep-time").innerText : "",
@@ -270,12 +308,13 @@ document.addEventListener('alpine:init', () => {
 
       const payload = { action: 'saveTrainingLog', targetDate: tD, trainingData: tData, conditionData: conditionData, token: API_TOKEN };
 
-      const fin = (uH) => { if (uH) globalTrainingHistory = uH; localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(tD)); this.hasDraft = false; finishSavingOverlay(() => { openHomeView(); }); };
+      const fin = (uH) => { if (uH) globalTrainingHistory = uH; localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(tD)); this.hasDraft = false; vibrateSuccess(); finishSavingOverlay(() => { openHomeView(); }); };
       const saveOff = () => {
         const qR = localStorage.getItem(OFFLINE_QUEUE_KEY); let q = qR ? JSON.parse(qR) : []; q.push({ id: Date.now(), payload: payload }); localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(q));
         globalTrainingHistory = globalTrainingHistory.filter(r => normalizeDateStr(r.date) !== normalizeDateStr(tD)); tData.forEach(d => globalTrainingHistory.push(d));
         const cR = localStorage.getItem(DATA_CACHE_KEY); if (cR) { let cD = JSON.parse(cR); cD.trainingHistory = globalTrainingHistory; localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(cD)); }
-        setTimeout(() => { this.isSaving = false; fin(null); }, 1200);
+        showToast("オフライン保存しました");
+        setTimeout(() => { this.isSaving = false; fin(null); }, 800);
       };
       
       if (!navigator.onLine) { saveOff(); return; }
@@ -283,12 +322,12 @@ document.addEventListener('alpine:init', () => {
       .then(res => res.json()).then(r => { 
         this.isSaving = false; 
         if (r.success) { fin(r.updatedHistory); } 
-        else { hideSavingOverlayImmediate(); this.saveMsg = "エラー: " + r.error; this.saveMsgColor = "#FF453A"; } 
+        else { hideSavingOverlayImmediate(); showToast("エラー: " + r.error, 'error'); vibrateError(); } 
       }).catch(e => { saveOff(); });
     },
-    
     confirmDeleteFromLog() {
       if(!currentRecordingDateStr) return;
+      vibrateMedium();
       openDeleteModal(currentRecordingDateStr, () => {
         this.isSaving = true; showSavingOverlay();
         const payload = { action: 'saveTrainingLog', targetDate: currentRecordingDateStr, trainingData: [], token: API_TOKEN };
@@ -299,10 +338,11 @@ document.addEventListener('alpine:init', () => {
             globalTrainingHistory = r.updatedHistory || [];
             localStorage.removeItem(STORAGE_DRAFT_PREFIX + normalizeDateStr(currentRecordingDateStr));
             this.hasDraft = false;
+            vibrateSuccess();
             finishSavingOverlay(() => { openHomeView(); });
-          } else { hideSavingOverlayImmediate(); alert("エラー: " + r.error); } 
+          } else { hideSavingOverlayImmediate(); showToast("エラー: " + r.error, 'error'); vibrateError(); } 
         })
-        .catch(e => { this.isSaving = false; hideSavingOverlayImmediate(); alert("通信エラー"); });
+        .catch(e => { this.isSaving = false; hideSavingOverlayImmediate(); showToast("通信エラー", 'error'); vibrateError(); });
       });
     },
     adjustTextarea(el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
@@ -313,31 +353,22 @@ document.addEventListener('alpine:init', () => {
     palette: ["#FF453A", "#FF9F0A", "#FFD60A", "#30D158", "#66D4CF", "#0A84FF", "#5E5CE6", "#BF5AF2", "#FF375F", "#8E8E93", "#FFFFFF"],
     activePart: null,
     presetList: timerPresets.map(p => ({ label: p.label, min: Math.floor(p.seconds / 60), sec: p.seconds % 60 })),
-    openPalette(part) { this.activePart = this.activePart === part ? null : part; },
+    openPalette(part) { vibrateSmall(); this.activePart = this.activePart === part ? null : part; },
     selectColor(color) {
       if(!this.activePart) return;
+      vibrateSmall();
       this.colors[this.activePart] = color; this.activePart = null; partColors = this.colors;
       localStorage.setItem('workout_app_colors_v1', JSON.stringify(this.colors)); renderHomeCalendar();
     },
     savePresets() {
+      vibrateMedium();
       timerPresets = this.presetList.map(p => ({
         label: String(p.label).trim(),
         seconds: (parseInt(p.min) || 0) * 60 + (parseInt(p.sec) || 0)
       }));
       localStorage.setItem('workout_app_timer_presets_v1', JSON.stringify(timerPresets));
       renderTimerPresets();
-      const btn = document.querySelector('.btn-secondary');
-      const originalText = btn.innerText;
-      btn.innerText = "保存しました！";
-      btn.style.backgroundColor = "#30D158";
-      btn.style.color = "#000000";
-      btn.style.borderColor = "#30D158";
-      setTimeout(() => {
-        btn.innerText = originalText;
-        btn.style.backgroundColor = "";
-        btn.style.color = "";
-        btn.style.borderColor = "";
-      }, 1500);
+      showToast("タイマー設定を保存しました");
     }
   }));
 });
@@ -346,8 +377,6 @@ document.addEventListener('alpine:init', () => {
    UI ＆ データ管理
 ====================================================================== */
 function initApp(data) {
-  const loading = document.getElementById("loading");
-  if(loading) loading.style.display = "none";
   if (data) {
     globalTrainingHistory = data.trainingHistory || []; globalHealthMap = {};
     if (data.healthHistory && data.healthHistory.length > 0) { data.healthHistory.forEach(item => { if (item && item.date) globalHealthMap[normalizeDateStr(item.date)] = item; }); } else if (data.currentData && data.currentData.date) { globalHealthMap[normalizeDateStr(data.currentData.date)] = data.currentData; }
@@ -360,7 +389,7 @@ function initApp(data) {
 
 function initBrowserHistoryGuard() { try { window.history.replaceState({ view: 'root_guard' }, ''); window.history.pushState({ view: 'home' }, ''); window.addEventListener('popstate', function(e) { const state = e.state; if (!state || state.view === 'root_guard') { window.history.pushState({ view: 'home' }, ''); openHomeView(true); return; } applyStateFromHistory(state); }); } catch (err) {} }
 function pushAppHistory(s) { try { s.timestamp = Date.now(); localStorage.setItem(STORAGE_VIEW_KEY, JSON.stringify(s)); window.history.pushState(s, ''); } catch (e) {} }
-function navigateBack() { const cV = getCurrentVisibleView(); if (cV === 'detail') { openHomeView(); } else openHomeView(); }
+function navigateBack() { vibrateSmall(); const cV = getCurrentVisibleView(); if (cV === 'detail') { openHomeView(); } else openHomeView(); }
 
 function getCurrentVisibleView() { 
   if (document.getElementById("view-dashboard")?.style.display === "block") return 'dashboard'; 
@@ -373,8 +402,6 @@ function getCurrentVisibleView() {
 function applyStateFromHistory(s) { if (!s || s.view === 'home') openHomeView(true); else if (s.view === 'detail') openDayDetailView(s.dateKey, s.label, s.fromView || 'home', null, true); else if (s.view === 'dashboard') openDashboardForDate(s.dateKey || null, true); else if (s.view === 'graph') switchTab('graph'); else if (s.view === 'settings') switchTab('settings'); else openHomeView(true); }
 
 function hideAllViews() { 
-  const loading = document.getElementById("loading");
-  if(loading) loading.style.display = "none"; 
   ['view-home','view-day-detail','view-dashboard','view-graph','view-settings'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = "none";
@@ -400,12 +427,14 @@ function openHomeView(sH) {
 
 window.shiftLogDay = function(offset) {
   if (!currentRecordingDateStr) return;
+  vibrateSmall();
   const d = parseDateKeyToObj(currentRecordingDateStr);
   const n = new Date(d.getFullYear(), d.getMonth(), d.getDate() + offset);
   openDashboardForDate(formatDateKey(n), false, offset > 0 ? "slide-anim-from-right" : "slide-anim-from-left");
 };
 
 function openDashboardForDate(tK, sH, slideClass) {
+  vibrateSmall();
   hideAllViews(); 
   const v = document.getElementById("view-dashboard");
   v.style.display = "block"; 
@@ -419,7 +448,7 @@ function openDashboardForDate(tK, sH, slideClass) {
   const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
   const pStr = `${pO.getMonth() + 1}/${pO.getDate()}(${DAY_LABELS_SHORT[pO.getDay()]})`;
   const capEl = document.getElementById("form-vitals-caption");
-  if (capEl) capEl.innerText = `栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
+  if (capEl) capEl.innerText = `前日の栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
 
   loadHealthDataIntoPrefix(formatDateKey(pO), "");
   
@@ -541,7 +570,7 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
     }
     const cl = (dK === tK && (!isD || activeFilters.length === 0 || t)) ? "cal-day today" : (t ? "cal-day trained" : "cal-day");
     c.innerHTML = `<div class="${cl}">${d}${dotsHtml}</div>`;
-    c.onclick = e => { e.stopPropagation(); openDayDetailView(dK, `${y}/${String(m+1).padStart(2,'0')}/${String(d).padStart(2,'0')} (${DAY_LABELS_SHORT[new Date(y,m,d).getDay()]})`, 'home'); };
+    c.onclick = e => { vibrateSmall(); e.stopPropagation(); openDayDetailView(dK, `${y}/${String(m+1).padStart(2,'0')}/${String(d).padStart(2,'0')} (${DAY_LABELS_SHORT[new Date(y,m,d).getDay()]})`, 'home'); };
     frag.appendChild(c);
   }
   for (let i = 1; i <= (7 - ((fD + dIM) % 7)) % 7; i++) { 
@@ -551,16 +580,6 @@ function buildCalendarGrid(y, m, tId, gId, isD) {
   }
   gridEl.appendChild(frag);
   setTimeout(renderWeeklySummary, 50);
-}
-
-function isDateTrained(dateKey, useFilter) {
-  if (!globalTrainingHistory) return false;
-  let records = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === dateKey);
-  if (!useFilter || activeFilters.length === 0) return records.length > 0;
-  return records.some(r => activeFilters.some(f => {
-      let pt = String(r.part || "").trim();
-      return pt.includes(f) || (f==="脚" && pt.includes("足")) || (f==="その他" && !["胸","背中","腕","肩","脚","足"].includes(pt));
-  }));
 }
 
 function renderWeeklySummary() {
@@ -577,13 +596,14 @@ function renderWeeklySummary() {
       s = Object.keys(pm).map(p => `${p} / ${pm[p]}セット`).join(" , ");
     }
     const rE = document.createElement("div"); rE.className = `list-row-compact ${k === tK ? 'is-today' : ''}`;
-    rE.onclick = () => openDayDetailView(k, formatDisplayDateWithDay(k), 'home');
+    rE.onclick = () => { vibrateSmall(); openDayDetailView(k, formatDisplayDateWithDay(k), 'home'); };
     rE.innerHTML = `<div class="list-date-col">${t.getMonth()+1}/${t.getDate()}(${DAY_LABELS_SHORT[t.getDay()]})</div><div class="list-desc-col ${cl}">${s}</div>`;
     c.appendChild(rE);
   }
 }
 
 window.changeHomeMonth = function(offset) { 
+  vibrateSmall();
   currentCalMonth += offset; 
   if (currentCalMonth < 0) { currentCalMonth = 11; currentCalYear--; } 
   else if (currentCalMonth > 11) { currentCalMonth = 0; currentCalYear++; } 
@@ -613,11 +633,13 @@ window.closeDeleteModal = function() {
 }
 
 window.executeDelete = function() {
+  vibrateMedium();
   if(pendingDeleteAction) { pendingDeleteAction(); closeDeleteModal(); }
 }
 
 window.confirmDeleteFromDetail = function() {
   if(!currentDetailDateKey) return;
+  vibrateMedium();
   openDeleteModal(currentDetailDateKey, () => {
     showSavingOverlay();
     const payload = { action: 'saveTrainingLog', targetDate: currentDetailDateKey, trainingData: [], token: API_TOKEN };
@@ -625,9 +647,10 @@ window.confirmDeleteFromDetail = function() {
       .then(r => r.json()).then(result => {
         if(result.success) {
           globalTrainingHistory = result.updatedHistory || [];
+          vibrateSuccess();
           finishSavingOverlay(() => { openHomeView(); });
-        } else { hideSavingOverlayImmediate(); alert("エラー: " + result.error); }
-      }).catch(e => { hideSavingOverlayImmediate(); alert("通信エラー"); });
+        } else { hideSavingOverlayImmediate(); showToast("エラー: " + result.error, 'error'); vibrateError(); }
+      }).catch(e => { hideSavingOverlayImmediate(); showToast("通信エラー", 'error'); vibrateError(); });
   });
 }
 
@@ -641,7 +664,7 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
   const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
   const pStr = `${pO.getMonth() + 1}/${pO.getDate()}(${DAY_LABELS_SHORT[pO.getDay()]})`;
   const capEl = document.getElementById("detail-vitals-caption");
-  if (capEl) capEl.innerText = `栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
+  if (capEl) capEl.innerText = `前日の栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
 
   loadHealthDataIntoPrefix(formatDateKey(pO), "detail-");
   
@@ -663,15 +686,15 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
     s.style.display = "block"; s.innerHTML = `<div class="detail-hero"><div><div class="detail-part-Main">${parts}</div><div class="detail-sub-counts">${rs.length}種目 ・ 合計 ${sets}セット</div></div><div class="detail-volume-block"><div class="detail-volume-num">${Number.isInteger(vol) ? vol.toLocaleString() : vol.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<span class="detail-volume-kg">kg</span></div><div class="detail-volume-unit">TOTAL VOLUME</div></div></div>`;
     rs.forEach(r => {
       const dc = document.createElement("div"); dc.className = "exercise-detail-card"; dc.innerHTML = `<div class="exercise-detail-name">${r.exercise || "種目未入力"}</div>`; const ps = parseDetailsToSets(r.details);
-      if (ps.length > 0) { const t = document.createElement("div"); t.className = "sets-table"; ps.forEach((s, i) => { t.innerHTML += `<div class="set-line"><span class="set-line-idx">SET ${i+1}</span><span class="set-line-val">${s.w !== '' ? s.w+'<span class="set-line-unit">kg</span>' : '-'} × ${s.r !== '' ? s.r+'<span class="set-line-unit">回</span>' : '-'}</span></div>`; }); dc.appendChild(t); } else if (r.details) { dc.innerHTML += `<div style="font-size:0.9rem; color:var(--text-secondary); white-space:pre-wrap;">${r.details}</div>`; }
+      if (ps.length > 0) { const t = document.createElement("div"); t.className = "sets-table"; ps.forEach((s, i) => { t.innerHTML += `<div class="set-line"><span class="set-line-idx">SET ${i+1}</span><span class="set-line-val">${s.w !== '' ? s.w+'<span class="set-line-unit">kg</span>' : '-'} × ${s.r !== '' ? s.r+'<span class="set-line-unit">回</span>' : '-'}</span></div>`; }); dc.appendChild(t); } else if (r.details) { dc.innerHTML += `<div style="font-size:0.95rem; color:var(--text-secondary); white-space:pre-wrap;">${r.details}</div>`; }
       if (r.memo) dc.innerHTML += `<div class="exercise-detail-memo">${r.memo}</div>`; c.appendChild(dc);
     });
   }
-  b.onclick = () => openDashboardForDate(currentDetailDateKey); const sO = { view: 'detail', dateKey: currentDetailDateKey, label: document.getElementById("day-detail-title").innerText, fromView: previousViewBeforeDetail };
+  b.onclick = () => { vibrateSmall(); openDashboardForDate(currentDetailDateKey); }; const sO = { view: 'detail', dateKey: currentDetailDateKey, label: document.getElementById("day-detail-title").innerText, fromView: previousViewBeforeDetail };
   if (!sH && !sC) pushAppHistory(sO); window.scrollTo(0, 0);
 }
 
-function shiftDetailDay(o) { if (!currentDetailDateKey) return; const d = parseDateKeyToObj(currentDetailDateKey); const n = new Date(d.getFullYear(), d.getMonth(), d.getDate() + o); openDayDetailView(formatDateKey(n), formatDisplayDateWithDay(formatDateKey(n)), null, o > 0 ? "slide-anim-from-right" : "slide-anim-from-left", true); }
+function shiftDetailDay(o) { if (!currentDetailDateKey) return; vibrateSmall(); const d = parseDateKeyToObj(currentDetailDateKey); const n = new Date(d.getFullYear(), d.getMonth(), d.getDate() + o); openDayDetailView(formatDateKey(n), formatDisplayDateWithDay(formatDateKey(n)), null, o > 0 ? "slide-anim-from-right" : "slide-anim-from-left", true); }
 
 function initDetailSwipe() { let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-day-detail"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftDetailDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }}); }
 function initLogSwipe() { let sX = 0, sY = 0, isD = false; const v = document.getElementById("view-dashboard"); if (!v) return; const h = (dx, dy) => { if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.3) shiftLogDay(dx > 0 ? -1 : 1); }; v.addEventListener("touchstart", e => { if (e.touches.length === 1) { sX = e.touches[0].clientX; sY = e.touches[0].clientY; } }, { passive: true }); v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true }); v.addEventListener("mousedown", e => { isD = true; sX = e.clientX; sY = e.clientY; }); v.addEventListener("mouseup", e => { if (isD) { isD = false; h(e.clientX - sX, e.clientY - sY); }}); }
@@ -683,7 +706,6 @@ function initCalendarSwipe() {
   v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true });
 }
 
-/* ★修正：保存時の達成感アニメーションの強化 */
 function showSavingOverlay() { 
   const o = document.getElementById("saving-overlay"); 
   document.getElementById("saving-spinner").style.display="block"; 
@@ -702,21 +724,8 @@ function finishSavingOverlay(cb) {
 }
 function hideSavingOverlayImmediate() { document.getElementById("saving-overlay").classList.remove("active"); }
 
-function showError(err) { 
-  const l = document.getElementById("loading"); 
-  if(l){
-    l.style.display = "block"; 
-    const spinner = l.querySelector('.spinner');
-    if(spinner) spinner.style.display = "none";
-    const text = document.getElementById("loading-text");
-    if(text) text.innerText = "エラー: " + err.message;
-    l.style.color = "#FF453A";
-    const btn = document.getElementById("reload-btn");
-    if(btn) btn.style.display = "inline-block";
-  }
-}
-
 function switchTab(t) {
+  vibrateSmall();
   hideAllViews();
   if (t === 'home') { 
     document.getElementById("view-home").style.display = "block"; 
@@ -750,9 +759,10 @@ function switchTab(t) {
 
 let rmChartInstance = null; let volumeChartInstance = null;
 let currentGraphPeriod = 'ALL';
-window.setGraphPeriod = function(period) { currentGraphPeriod = period; document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active')); document.getElementById('period-btn-' + period).classList.add('active'); updateGraphs(); };
+window.setGraphPeriod = function(period) { vibrateSmall(); currentGraphPeriod = period; document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active')); document.getElementById('period-btn-' + period).classList.add('active'); updateGraphs(); };
 
 window.toggleGraphSelect = function() {
+  vibrateSmall();
   const list = document.getElementById('graph-select-list');
   const icon = document.getElementById('graph-select-icon');
   if (list.style.display === 'none') {
@@ -783,13 +793,13 @@ function initGraphView() {
   const pm = { "胸": new Set(), "背中": new Set(), "脚": new Set(), "肩": new Set(), "腕": new Set(), "その他": new Set() };
   globalTrainingHistory.forEach(r => { const ex = String(r.exercise || "").trim(); let pt = String(r.part || "").trim(); if (!ex || ex === "種目不明") return; if (pt === "足") pt = "脚"; if (!["胸", "背中", "脚", "肩", "腕"].includes(pt)) pt = "その他"; pm[pt].add(ex); });
   
-  let h = `<div class="custom-dropdown-item" onclick="selectGraphExercise('', '選択をクリア...')"><span>選択をクリア...</span></div>`;
+  let h = `<div class="custom-dropdown-item" onclick="vibrateSmall(); selectGraphExercise('', '選択をクリア...')"><span>選択をクリア...</span></div>`;
   ["胸", "背中", "脚", "肩", "腕", "その他"].forEach(p => { 
     const exs = Array.from(pm[p]).sort(); 
     if (exs.length > 0) { 
       h += `<div class="custom-dropdown-optgroup">【${p}】</div>`; 
       exs.forEach(ex => { 
-        h += `<div class="custom-dropdown-item sub-item" onclick="selectGraphExercise('${ex}', '${ex}')"><span>${ex}</span></div>`; 
+        h += `<div class="custom-dropdown-item sub-item" onclick="vibrateSmall(); selectGraphExercise('${ex}', '${ex}')"><span>${ex}</span></div>`; 
       }); 
     } 
   });
@@ -825,7 +835,7 @@ function drawChart(cId, lbl, lbls, d, c) {
       responsive: true, maintainAspectRatio: false, 
       animation: { duration: 800, easing: 'easeOutQuart' },
       plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1C1C1E', titleFont: { size: 13, family: 'Inter' }, bodyFont: { size: 14, weight: 'bold', family: 'Oswald' }, padding: 10, displayColors: false } }, 
-      scales: { x: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8E8E93', font: { family: 'Inter' } } }, y: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8E8E93', font: { family: 'Oswald' } } } } } 
+      scales: { x: { grid: { color: 'rgba(255, 255, 255, 0.12)' }, ticks: { color: '#8E8E93', font: { family: 'Inter' } } }, y: { grid: { color: 'rgba(255, 255, 255, 0.12)' }, ticks: { color: '#8E8E93', font: { family: 'Oswald' } } } } } 
   };
   if (cId === 'rmChart') rmChartInstance = new Chart(ctx, cfg); else volumeChartInstance = new Chart(ctx, cfg);
 }
