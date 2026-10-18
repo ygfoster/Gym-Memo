@@ -21,7 +21,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v17"; // ★キャッシュリセット
+const DATA_CACHE_KEY = "workout_app_data_cache_v21";
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -61,7 +61,10 @@ document.addEventListener("DOMContentLoaded", function() {
   initLogSwipe(); 
   initCalendarSwipe(); 
   initTimerSheetSwipe();
-  makeDraggable(document.getElementById('floating-total')); makeDraggable(document.getElementById('floating-rest'));
+  
+  // ★修正：初期位置を左側に設定（左：TOTAL、少し上にTIMER）
+  makeDraggable(document.getElementById('floating-total')); 
+  makeDraggable(document.getElementById('floating-rest'));
   
   renderTimerPresets();
   updateTimerDisplays();
@@ -416,7 +419,7 @@ function openDashboardForDate(tK, sH, slideClass) {
   const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
   const pStr = `${pO.getMonth() + 1}/${pO.getDate()}(${DAY_LABELS_SHORT[pO.getDay()]})`;
   const capEl = document.getElementById("form-vitals-caption");
-  if (capEl) capEl.innerText = `前日の栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
+  if (capEl) capEl.innerText = `栄養: ${pStr} / 今朝の睡眠: ${tStr}`;
 
   loadHealthDataIntoPrefix(formatDateKey(pO), "");
   
@@ -647,9 +650,11 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
   const rs = globalTrainingHistory.filter(r => r.date && normalizeDateStr(r.date) === currentDetailDateKey);
   if (rs.length === 0) {
     s.style.display = "none"; c.innerHTML = `<div class="empty-state">
-      <svg class="empty-state-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+      <svg class="empty-state-icon" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6 4v16"></path><path d="M18 4v16"></path><path d="M9 12h6"></path><rect x="2" y="8" width="4" height="8" rx="1"></rect><rect x="18" y="8" width="4" height="8" rx="1"></rect>
+      </svg>
       <div class="empty-state-title">記録がありません</div>
-      <div class="empty-state-sub">＋ボタンから<br>最初のワークアウトを追加しましょう</div>
+      <div class="empty-state-sub">右下のボタンから<br>最初のワークアウトを追加しましょう</div>
     </div>`; b.innerText = "この日のワークアウトを記録"; if(del) del.style.display = "none";
   } else {
     b.innerText = "この日の記録を編集・追加"; if(del) del.style.display = "inline-flex";
@@ -678,7 +683,7 @@ function initCalendarSwipe() {
   v.addEventListener("touchend", e => { if (e.changedTouches.length === 1) h(e.changedTouches[0].clientX - sX, e.changedTouches[0].clientY - sY); }, { passive: true });
 }
 
-/* ★修正：保存時の達成感アニメーションを表示 */
+/* ★修正：保存時の達成感アニメーションの強化 */
 function showSavingOverlay() { 
   const o = document.getElementById("saving-overlay"); 
   document.getElementById("saving-spinner").style.display="block"; 
@@ -693,7 +698,7 @@ function finishSavingOverlay(cb) {
   setTimeout(()=>{ 
     document.getElementById("saving-overlay").classList.remove("active"); 
     if (cb) cb(); 
-  }, 1000); 
+  }, 1200); 
 }
 function hideSavingOverlayImmediate() { document.getElementById("saving-overlay").classList.remove("active"); }
 
@@ -798,8 +803,6 @@ function initGraphView() {
 }
 
 function clearGraphs() { if (rmChartInstance) rmChartInstance.destroy(); if (volumeChartInstance) volumeChartInstance.destroy(); }
-
-/* ★修正：グラフ描画時のアニメーション追加 */
 function updateGraphs() {
   const tE = document.getElementById("graph-exercise-select").value; if (!tE) { clearGraphs(); return; }
   let records = globalTrainingHistory.filter(r => r.date && String(r.exercise).trim() === tE).sort((a,b) => new Date(normalizeDateStr(a.date)) - new Date(normalizeDateStr(b.date)));
@@ -820,7 +823,7 @@ function drawChart(cId, lbl, lbls, d, c) {
     data: { labels: lbls, datasets: [{ label: lbl, data: d, borderColor: c, backgroundColor: c+'33', borderWidth: 2, pointBackgroundColor: c, pointRadius: 4, fill: true, tension: 0.3 }] }, 
     options: { 
       responsive: true, maintainAspectRatio: false, 
-      animation: { duration: 800, easing: 'easeOutQuart' }, /* ★追加：ダイナミックな描画アニメーション */
+      animation: { duration: 800, easing: 'easeOutQuart' },
       plugins: { legend: { display: false }, tooltip: { backgroundColor: '#1C1C1E', titleFont: { size: 13, family: 'Inter' }, bodyFont: { size: 14, weight: 'bold', family: 'Oswald' }, padding: 10, displayColors: false } }, 
       scales: { x: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8E8E93', font: { family: 'Inter' } } }, y: { grid: { color: 'rgba(255, 255, 255, 0.08)' }, ticks: { color: '#8E8E93', font: { family: 'Oswald' } } } } } 
   };
