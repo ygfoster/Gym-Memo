@@ -8,22 +8,18 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="ジムメモ">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#050505">
+  <meta name="theme-color" content="#0A0A0A">
 
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon.png">
   
   <title>ジムメモ</title>
   
+  <!-- 強制アップデート用スクリプト -->
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.getRegistrations().then(function(registrations) {
         for(let registration of registrations) { registration.unregister(); }
-      });
-    }
-    if (window.caches) {
-      caches.keys().then((keyList) => {
-        Promise.all(keyList.map((key) => caches.delete(key)));
       });
     }
   </script>
@@ -31,10 +27,14 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./style.css?v=21">
+  <link rel="stylesheet" href="./style.css?v=200">
 </head>
 <body>
-  <!-- 達成感を生む保存アニメーションUI -->
+  
+  <!-- トースト通知 -->
+  <div id="toast-container"></div>
+
+  <!-- 達成感を生む保存アニメーション -->
   <div id="saving-overlay" class="saving-overlay">
     <div class="saving-box">
       <div id="saving-spinner" class="spinner"></div>
@@ -56,7 +56,7 @@
     </div>
   </div>
 
-  <!-- ★修正：右下のFABをダンベルアイコンに変更し、右と下に余白を確保して配置 -->
+  <!-- FABを右下に配置 -->
   <button class="fab-record" onclick="openDashboardForDate(null)" title="ワークアウトを記録">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
       <path d="M6 4v16"></path><path d="M18 4v16"></path><path d="M9 12h6"></path>
@@ -65,13 +65,9 @@
   </button>
 
   <div class="container">
-    <div id="loading">
-      <div class="spinner" style="margin: 0 auto 16px;"></div>
-      <div id="loading-text">データを同期中...</div>
-      <button id="reload-btn" class="btn-secondary" style="display: none; margin-top: 24px; padding: 16px 32px;" onclick="location.reload(true)">再読み込みして復旧</button>
-    </div>
+    <!-- ローディングの「待たせる」表示を廃止し、バックグラウンド同期中に控えめに表示するだけに変更 -->
+    <div id="loading" style="display: none;"></div>
 
-    <!-- 1. 新・ホーム画面 -->
     <div id="view-home" style="display: none;">
       <div class="home-layout-vertical">
         <div class="home-calendar-section">
@@ -126,7 +122,6 @@
       <div id="day-summary-container" style="display: none;"></div>
       <div id="day-detail-content"></div>
       
-      <!-- 編集画面へ飛ぶボタン（詳細画面に残す） -->
       <button class="btn-primary" id="day-detail-edit-btn" style="margin-top: 24px;">この日の記録を編集</button>
       <div style="text-align: center; margin-top: 32px;">
         <button type="button" class="btn-icon-danger" id="day-detail-delete-btn" style="display: none;" onclick="confirmDeleteFromDetail()"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg></button>
@@ -168,32 +163,32 @@
 
         <div class="form-card" style="padding: 16px 20px; margin-bottom: 16px; overflow: visible;">
           <div class="custom-dropdown" x-data="{ dropdownOpen: false }" @click.away="dropdownOpen = false">
-            <div class="custom-dropdown-display" :class="{ 'active': dropdownOpen }" @click="dropdownOpen = !dropdownOpen">
+            <div class="custom-dropdown-display" :class="{ 'active': dropdownOpen }" @click="vibrateSmall(); dropdownOpen = !dropdownOpen">
                <span x-text="formPart === 'custom' ? 'その他（自由記述）' : (formPart || 'トレーニング部位を選択...')"></span>
                <svg class="custom-dropdown-icon" :class="{ 'rotated': dropdownOpen }" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
             </div>
             <div class="custom-dropdown-list" x-show="dropdownOpen" x-transition.opacity.duration.200ms style="display: none;">
                <template x-for="opt in [{v:'', l:'選択をクリア...'}, {v:'胸', l:'胸'}, {v:'背中', l:'背中'}, {v:'腕', l:'腕'}, {v:'肩', l:'肩'}, {v:'脚', l:'脚'}, {v:'custom', l:'その他（自由記述）'}]">
-                 <div class="custom-dropdown-item" @click="formPart = opt.v; dropdownOpen = false; saveDraft()">
+                 <div class="custom-dropdown-item" @click="vibrateSmall(); formPart = opt.v; dropdownOpen = false; saveDraft()">
                    <span x-text="opt.l"></span>
                    <svg x-show="formPart === opt.v" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-primary)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
                  </div>
                </template>
             </div>
           </div>
-          <input type="text" class="input-field" placeholder="部位を入力 (例: 胸・三頭筋)" style="margin-top: 10px;" x-show="formPart === 'custom'" x-model="formPartCustom" @input="saveDraft()" x-transition>
+          <input type="text" class="input-field" placeholder="部位を入力 (例: 胸・三頭筋)" style="margin-top: 12px;" x-show="formPart === 'custom'" x-model="formPartCustom" @input="saveDraft()" x-transition>
         </div>
         
         <div>
           <template x-for="(ex, index) in formExercises" :key="index">
             <div class="form-card exercise-row">
-              <div class="form-card-header"><span class="form-card-num" x-text="`EXERCISE ${index + 1}`"></span><button type="button" class="btn-remove-card" x-show="index > 0" @click="removeExercise(index)">削除</button></div>
+              <div class="form-card-header"><span class="form-card-num" x-text="`EXERCISE ${index + 1}`"></span><button type="button" class="btn-remove-card" x-show="index > 0" @click="vibrateSmall(); removeExercise(index)">削除</button></div>
               <div class="input-with-history">
                 <div class="autocomplete-wrapper" style="flex: 1; margin-bottom: 0;">
                   <input type="text" class="input-field" placeholder="種目名を入力" autocomplete="off" x-model="ex.name" @input="suggest(index)" @focus="suggest(index)">
-                  <div class="suggest-box" x-show="ex.suggests.length > 0" style="display:block;"><template x-for="sg in ex.suggests"><div class="suggest-item" @click="selectSuggest(index, sg.name)"><span x-text="sg.name"></span><span x-show="sg.part" class="suggest-part-tag" x-text="sg.part"></span></div></template></div>
+                  <div class="suggest-box" x-show="ex.suggests.length > 0" style="display:block;"><template x-for="sg in ex.suggests"><div class="suggest-item" @click="vibrateSmall(); selectSuggest(index, sg.name)"><span x-text="sg.name"></span><span x-show="sg.part" class="suggest-part-tag" x-text="sg.part"></span></div></template></div>
                 </div>
-                <button type="button" class="btn-history" @click="openHistory(ex.name)" title="過去の記録を見る"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></button>
+                <button type="button" class="btn-history" @click="vibrateSmall(); openHistory(ex.name)" title="過去の記録を見る"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></button>
               </div>
               <div style="margin-bottom: 12px;">
                 <template x-for="(set, sIndex) in ex.sets">
@@ -202,7 +197,7 @@
                     <div class="unit-input-wrap"><input type="number" step="any" inputmode="decimal" placeholder="0" x-model="set.w" @input="saveDraft()"><span class="unit-suffix">kg</span></div>
                     <div class="set-multiply">×</div>
                     <div class="unit-input-wrap"><input type="number" step="1" inputmode="numeric" placeholder="0" x-model="set.r" @input="saveDraft()"><span class="unit-suffix">回</span></div>
-                    <button type="button" class="btn-clear-set" @click="set.w=''; set.r=''; saveDraft();" title="クリア">
+                    <button type="button" class="btn-clear-set" @click="vibrateSmall(); set.w=''; set.r=''; saveDraft();" title="クリア">
                       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                     </button>
                   </div>
@@ -212,14 +207,13 @@
             </div>
           </template>
         </div>
-        <button type="button" class="btn-secondary" @click="addExercise()">＋ 次の種目を追加</button>
-        <button type="button" class="btn-primary" @click="saveTraining()" :disabled="isSaving">記録を保存</button>
-        <div id="save-msg" x-text="saveMsg" :style="`color: ${saveMsgColor}`"></div>
+        <button type="button" class="btn-secondary" @click="vibrateSmall(); addExercise()">＋ 次の種目を追加</button>
+        <button type="button" class="btn-primary" @click="vibrateMedium(); saveTraining()" :disabled="isSaving">記録を保存</button>
       </div>
 
       <div x-show="historyModal.isOpen" class="history-modal-overlay">
         <div class="history-modal" @click.stop>
-          <div class="history-modal-header"><span class="history-modal-title" x-text="historyModal.exercise + ' の履歴'"></span><button class="history-close-btn" @click="closeHistory()">×</button></div>
+          <div class="history-modal-header"><span class="history-modal-title" x-text="historyModal.exercise + ' の履歴'"></span><button class="history-close-btn" @click="vibrateSmall(); closeHistory()">×</button></div>
           <div class="history-modal-body">
             <template x-for="rec in historyModal.records"><div class="history-record-card"><div class="history-record-date" x-text="rec.dateStr"></div><div class="history-record-sets" x-text="rec.details"></div><div class="history-record-memo" x-show="rec.memo" x-text="rec.memo"></div></div></template>
             <div x-show="historyModal.records.length === 0" style="text-align:center; color:#8E8E93; font-size:0.95rem; padding: 24px;">記録がありません</div>
@@ -233,7 +227,7 @@
       <div class="top-nav"><span class="nav-context-date">TRAINING DATA</span></div>
       <div class="form-card" style="padding: 16px 20px; margin: 12px 16px 24px; overflow: visible;">
         <div class="custom-dropdown" id="graph-select-container" style="margin-bottom: 0;">
-          <div class="custom-dropdown-display" onclick="toggleGraphSelect()">
+          <div class="custom-dropdown-display" onclick="vibrateSmall(); toggleGraphSelect()">
             <span id="graph-select-label">グラフ化する種目を選択...</span>
             <svg class="custom-dropdown-icon" id="graph-select-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </div>
@@ -242,10 +236,10 @@
         <input type="hidden" id="graph-exercise-select" value="">
       </div>
       <div class="graph-period-toggles">
-        <button class="period-btn" id="period-btn-1M" onclick="setGraphPeriod('1M')">1M</button>
-        <button class="period-btn" id="period-btn-3M" onclick="setGraphPeriod('3M')">3M</button>
-        <button class="period-btn" id="period-btn-6M" onclick="setGraphPeriod('6M')">6M</button>
-        <button class="period-btn active" id="period-btn-ALL" onclick="setGraphPeriod('ALL')">ALL</button>
+        <button class="period-btn" id="period-btn-1M" onclick="vibrateSmall(); setGraphPeriod('1M')">1M</button>
+        <button class="period-btn" id="period-btn-3M" onclick="vibrateSmall(); setGraphPeriod('3M')">3M</button>
+        <button class="period-btn" id="period-btn-6M" onclick="vibrateSmall(); setGraphPeriod('6M')">6M</button>
+        <button class="period-btn active" id="period-btn-ALL" onclick="vibrateSmall(); setGraphPeriod('ALL')">ALL</button>
       </div>
       <div class="section-header" style="margin-top: 12px;"><span class="section-label">1RM PROGRESS (推定最大重量)</span></div>
       <div id="chart-rm-container" style="padding: 16px; position: relative; height: 260px;"><canvas id="rmChart"></canvas></div>
@@ -273,7 +267,7 @@
             </div>
           </div>
         </template>
-        <button class="btn-secondary" style="margin-top: 20px; margin-bottom: 0;" @click="savePresets()">変更を保存して反映</button>
+        <button class="btn-secondary" style="margin-top: 20px; margin-bottom: 0;" @click="vibrateMedium(); savePresets()">変更を保存して反映</button>
       </div>
 
       <div class="section-header" style="margin-top: 36px;"><span class="section-label">THEME COLORS</span><span class="section-hint">カレンダーのドット色</span></div>
@@ -284,10 +278,10 @@
               <div class="color-preview" :style="`background-color: ${color}`"></div>
               <span x-text="part" class="color-part-label"></span>
             </div>
-            <button class="btn-color-change" @click="openPalette(part)">変更</button>
+            <button class="btn-color-change" @click="vibrateSmall(); openPalette(part)">変更</button>
             <div class="color-palette" x-show="activePart === part" x-transition>
               <template x-for="c in palette" :key="c">
-                <div class="palette-swatch" :class="{'selected': color === c}" :style="`background-color: ${c}`" @click="selectColor(c)"></div>
+                <div class="palette-swatch" :class="{'selected': color === c}" :style="`background-color: ${c}`" @click="vibrateSmall(); selectColor(c)"></div>
               </template>
             </div>
           </div>
@@ -301,24 +295,24 @@
     <div class="sheet-handle" onclick="closeTimerSheet()"></div><div class="sheet-title">TIMER SETTINGS</div>
     <div class="preset-pills" id="timer-presets-container"></div>
     <div class="timer-circle-wrap"><div class="timer-circle-iphone stopped"><span id="sheet-rest-time">03:00</span></div></div>
-    <div class="timer-adjust-row"><button class="adjust-btn" onclick="adjustRestTime(-10)">- 10s</button><button class="adjust-btn" onclick="adjustRestTime(10)">+ 10s</button></div>
+    <div class="timer-adjust-row"><button class="adjust-btn" onclick="vibrateSmall(); adjustRestTime(-10)">- 10s</button><button class="adjust-btn" onclick="vibrateSmall(); adjustRestTime(10)">+ 10s</button></div>
     <div class="timer-action-row">
-      <button id="sheet-reset-btn" class="sheet-circle-btn reset" onclick="resetRestTimer()">Reset</button>
-      <button id="sheet-play-btn" class="sheet-circle-btn play" onclick="toggleRestTimer()">Start</button>
+      <button id="sheet-reset-btn" class="sheet-circle-btn reset" onclick="vibrateMedium(); resetRestTimer()">Reset</button>
+      <button id="sheet-play-btn" class="sheet-circle-btn play" onclick="vibrateMedium(); toggleRestTimer()">Start</button>
     </div>
   </div>
 
-  <!-- ★修正：タイマーとTOTALは画面左下に配置（右下のFABと分ける） -->
+  <!-- タイマーとTOTAL（左側に配置） -->
   <div id="floating-total" class="floating-widget"><div class="floating-total-label">TOTAL</div><div id="floating-total-time" class="floating-total-time">00:00</div></div>
-  <div id="floating-rest" class="floating-widget"><div class="rest-circle"><span id="floating-rest-time">03:00</span></div><button id="floating-rest-play" class="float-btn-play" onclick="toggleRestTimer()"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button><button id="floating-rest-reset" class="float-btn-reset" onclick="resetRestTimer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg></button></div>
+  <div id="floating-rest" class="floating-widget"><div class="rest-circle"><span id="floating-rest-time">03:00</span></div><button id="floating-rest-play" class="float-btn-play" onclick="vibrateMedium(); toggleRestTimer()"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button><button id="floating-rest-reset" class="float-btn-reset" onclick="vibrateSmall(); resetRestTimer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg></button></div>
 
   <div id="bottom-nav-bar">
-    <div class="nav-item active" id="nav-home" onclick="switchTab('home')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></div><div class="nav-text">HOME</div></div>
-    <div class="nav-item" id="nav-log" onclick="switchTab('log')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></div><div class="nav-text">LOG</div></div>
-    <div class="nav-item" id="nav-graph" onclick="switchTab('graph')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line><line x1="2" y1="20" x2="22" y2="20"></line></svg></div><div class="nav-text">GRAPH</div></div>
-    <div class="nav-item" id="nav-timer" onclick="openTimerSheet()"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div><div class="nav-text">TIMER</div></div>
-    <div class="nav-item" id="nav-settings" onclick="switchTab('settings')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0 2.83l.06.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></div><div class="nav-text">SETTING</div></div>
+    <div class="nav-item active" id="nav-home" onclick="vibrateSmall(); switchTab('home')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path></svg></div><div class="nav-text">HOME</div></div>
+    <div class="nav-item" id="nav-log" onclick="vibrateSmall(); switchTab('log')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg></div><div class="nav-text">LOG</div></div>
+    <div class="nav-item" id="nav-graph" onclick="vibrateSmall(); switchTab('graph')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line><line x1="2" y1="20" x2="22" y2="20"></line></svg></div><div class="nav-text">GRAPH</div></div>
+    <div class="nav-item" id="nav-timer" onclick="vibrateSmall(); openTimerSheet()"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg></div><div class="nav-text">TIMER</div></div>
+    <div class="nav-item" id="nav-settings" onclick="vibrateSmall(); switchTab('settings')"><div class="nav-icon"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></div><div class="nav-text">SETTING</div></div>
   </div>
-  <script src="./app.js?v=21"></script>
+  <script src="./app.js?v=200"></script>
 </body>
 </html>
