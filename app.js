@@ -21,7 +21,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v202"; // キャッシュ更新
+const DATA_CACHE_KEY = "workout_app_data_cache_v203"; // ★キャッシュ更新
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -48,17 +48,18 @@ try {
 } catch(e) {}
 if (!timerPresets || !Array.isArray(timerPresets) || timerPresets.length === 0) { timerPresets = DEFAULT_TIMER_PRESETS; }
 
-// ★修正：タイマー終了時の5回バイブレーションを追加
+// ハプティックフィードバック
 window.vibrateSmall = function() { if(navigator.vibrate) navigator.vibrate(10); };
 window.vibrateMedium = function() { if(navigator.vibrate) navigator.vibrate(20); };
-window.vibrateTimerEnd = function() { 
-  if(navigator.vibrate) {
-    // 500ms振動して200ms休む、を5回繰り返す（ブー、ブー、ブー、ブー、ブー）
-    navigator.vibrate([500, 200, 500, 200, 500, 200, 500, 200, 500]);
-  }
-};
 window.vibrateSuccess = function() { if(navigator.vibrate) navigator.vibrate([15, 50, 20]); };
 window.vibrateError = function() { if(navigator.vibrate) navigator.vibrate([20, 30, 20, 30, 30]); };
+
+// ★修正：5回の長いバイブレーション（ブー、ブー、ブー、ブー、ブー）
+window.vibrateTimerEnd = function() { 
+  if(navigator.vibrate) {
+    navigator.vibrate([500, 500, 500, 500, 500, 500, 500, 500, 500]);
+  }
+};
 
 window.showToast = function(message, type = 'success') {
   const container = document.getElementById('toast-container');
@@ -229,7 +230,7 @@ async function startRestTimer() {
       restRemainingSeconds = 0; 
       updateTimerDisplays();
       
-      // ★修正：タイマー終了時に長い5回のバイブレーションを実行
+      // ★完全修正：タイマー終了時に確実にvibrateTimerEnd()を呼ぶ
       vibrateTimerEnd();
       
       if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
@@ -715,7 +716,7 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
     s.style.display = "block"; s.innerHTML = `<div class="detail-hero"><div><div class="detail-part-Main">${parts}</div><div class="detail-sub-counts">${rs.length}種目 ・ 合計 ${sets}セット</div></div><div class="detail-volume-block"><div class="detail-volume-num">${Number.isInteger(vol) ? vol.toLocaleString() : vol.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<span class="detail-volume-kg">kg</span></div><div class="detail-volume-unit">TOTAL VOLUME</div></div></div>`;
     rs.forEach(r => {
       const dc = document.createElement("div"); dc.className = "exercise-detail-card"; dc.innerHTML = `<div class="exercise-detail-name">${r.exercise || "種目未入力"}</div>`; const ps = parseDetailsToSets(r.details);
-      if (ps.length > 0) { const t = document.createElement("div"); t.className = "sets-table"; ps.forEach((s, i) => { t.innerHTML += `<div class="set-line"><span class="set-line-idx">SET ${i+1}</span><span class="set-line-val">${s.w !== '' ? s.w+'<span class="set-line-unit">kg</span>' : '-'} × ${s.r !== '' ? s.r+'<span class="set-line-unit">回</span>' : '-'}</span></div>`; }); dc.appendChild(t); } else if (r.details) { dc.innerHTML += `<div style="font-size:0.95rem; color:var(--text-secondary); white-space:pre-wrap;">${r.details}</div>`; }
+      if (ps.length > 0) { const t = document.createElement("div"); t.className = "sets-table"; ps.forEach((s, i) => { t.innerHTML += `<div class="set-line"><span class="set-line-idx">SET ${i+1}</span><span class="set-line-val">${s.w !== '' ? s.w+'<span class="set-line-unit">kg</span>' : '-'} × ${s.r !== '' ? s.r+'<span class="set-line-unit">回</span>' : '-'}</span></div>`; }); dc.appendChild(t); } else if (r.details) { dc.innerHTML += `<div style="font-size:0.9rem; color:var(--text-secondary); white-space:pre-wrap;">${r.details}</div>`; }
       if (r.memo) dc.innerHTML += `<div class="exercise-detail-memo">${r.memo}</div>`; c.appendChild(dc);
     });
   }
