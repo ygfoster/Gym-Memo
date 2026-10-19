@@ -21,7 +21,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v203"; // ★キャッシュ更新
+const DATA_CACHE_KEY = "workout_app_data_cache_v205"; // ★強制リセット
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -54,7 +54,7 @@ window.vibrateMedium = function() { if(navigator.vibrate) navigator.vibrate(20);
 window.vibrateSuccess = function() { if(navigator.vibrate) navigator.vibrate([15, 50, 20]); };
 window.vibrateError = function() { if(navigator.vibrate) navigator.vibrate([20, 30, 20, 30, 30]); };
 
-// ★修正：5回の長いバイブレーション（ブー、ブー、ブー、ブー、ブー）
+// ★修正：純粋な5回のバイブレーション（500ms振動、500ms停止）に戻す
 window.vibrateTimerEnd = function() { 
   if(navigator.vibrate) {
     navigator.vibrate([500, 500, 500, 500, 500, 500, 500, 500, 500]);
@@ -209,13 +209,22 @@ function updateTimerDisplays() {
 }
 function selectPreset(s, b) { pauseRestTimer(); currentPresetSeconds = s; restRemainingSeconds = s; document.querySelectorAll('.preset-btn').forEach(e => e.classList.remove('active')); b.classList.add('active'); updateTimerDisplays(); }
 function adjustRestTime(a) { vibrateSmall(); restRemainingSeconds += a; if (restRemainingSeconds < 0) restRemainingSeconds = 0; if (isResting) restEndTime += a * 1000; updateTimerDisplays(); }
-function resetRestTimer() { vibrateSmall(); pauseRestTimer(); restRemainingSeconds = currentPresetSeconds; updateTimerDisplays(); }
+
+// ★修正：isAutoフラグを追加し、自動リセット時はバイブを鳴らさず上書きを防ぐ
+function resetRestTimer(isAuto = false) { 
+  if(!isAuto) vibrateSmall(); 
+  pauseRestTimer(); 
+  restRemainingSeconds = currentPresetSeconds; 
+  updateTimerDisplays(); 
+}
+
 function toggleRestTimer() { vibrateMedium(); if (isResting) pauseRestTimer(); else startRestTimer(); }
 function pauseRestTimer() { isResting = false; clearInterval(restTimerInterval); if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null); updateTimerDisplays(); }
 
 async function startRestTimer() {
   if (restRemainingSeconds <= 0) return; isResting = true; restEndTime = Date.now() + (restRemainingSeconds * 1000);
   if (!isTotalTimerRunning) { isTotalTimerRunning = true; totalStartTime = Date.now() - (totalSeconds * 1000); totalTimerInterval = setInterval(() => { totalSeconds = Math.floor((Date.now() - totalStartTime) / 1000); document.getElementById("floating-total-time").innerText = formatTime(totalSeconds); }, 1000); }
+  
   try { if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
   updateTimerDisplays();
   
@@ -230,11 +239,13 @@ async function startRestTimer() {
       restRemainingSeconds = 0; 
       updateTimerDisplays();
       
-      // ★完全修正：タイマー終了時に確実にvibrateTimerEnd()を呼ぶ
+      // 5回の長いバイブレーションを発動
       vibrateTimerEnd();
+      showToast("TIMER COMPLETE!", 'success');
       
       if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
-      setTimeout(() => { resetRestTimer(); }, 1000);
+      // ★修正：バイブレーションが完全に終わる（約4.5秒）のを待ってからリセットする（上書きキャンセル防止）
+      setTimeout(() => { resetRestTimer(true); }, 5000);
     }
   }, 200);
 }
@@ -716,7 +727,7 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
     s.style.display = "block"; s.innerHTML = `<div class="detail-hero"><div><div class="detail-part-Main">${parts}</div><div class="detail-sub-counts">${rs.length}種目 ・ 合計 ${sets}セット</div></div><div class="detail-volume-block"><div class="detail-volume-num">${Number.isInteger(vol) ? vol.toLocaleString() : vol.toFixed(1).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<span class="detail-volume-kg">kg</span></div><div class="detail-volume-unit">TOTAL VOLUME</div></div></div>`;
     rs.forEach(r => {
       const dc = document.createElement("div"); dc.className = "exercise-detail-card"; dc.innerHTML = `<div class="exercise-detail-name">${r.exercise || "種目未入力"}</div>`; const ps = parseDetailsToSets(r.details);
-      if (ps.length > 0) { const t = document.createElement("div"); t.className = "sets-table"; ps.forEach((s, i) => { t.innerHTML += `<div class="set-line"><span class="set-line-idx">SET ${i+1}</span><span class="set-line-val">${s.w !== '' ? s.w+'<span class="set-line-unit">kg</span>' : '-'} × ${s.r !== '' ? s.r+'<span class="set-line-unit">回</span>' : '-'}</span></div>`; }); dc.appendChild(t); } else if (r.details) { dc.innerHTML += `<div style="font-size:0.9rem; color:var(--text-secondary); white-space:pre-wrap;">${r.details}</div>`; }
+      if (ps.length > 0) { const t = document.createElement("div"); t.className = "sets-table"; ps.forEach((s, i) => { t.innerHTML += `<div class="set-line"><span class="set-line-idx">SET ${i+1}</span><span class="set-line-val">${s.w !== '' ? s.w+'<span class="set-line-unit">kg</span>' : '-'} × ${s.r !== '' ? s.r+'<span class="set-line-unit">回</span>' : '-'}</span></div>`; }); dc.appendChild(t); } else if (r.details) { dc.innerHTML += `<div style="font-size:0.95rem; color:var(--text-secondary); white-space:pre-wrap;">${r.details}</div>`; }
       if (r.memo) dc.innerHTML += `<div class="exercise-detail-memo">${r.memo}</div>`; c.appendChild(dc);
     });
   }
