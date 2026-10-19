@@ -2,119 +2,124 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Life Tracker</title>
-  <link rel="stylesheet" href="style.css">
+  
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Life Tracker">
+  <link rel="apple-touch-icon" href="icon.png">
+  <link rel="manifest" href="manifest.json">
+  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap" rel="stylesheet">
+  <!-- キャッシュ強制更新 v10 -->
+  <link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
+  <!-- メインのカルーセル構造 -->
+  <div class="app-container">
+    <main id="main-content" class="viewport">
+      <div id="swipe-wrapper" class="swipe-wrapper">
+        
+        <!-- 1. Life -->
+        <section id="view-life" class="view-section">
+          <h1 class="view-title">私の寿命</h1>
+          <div class="timer-display" id="timer-life"></div>
+        </section>
+        
+        <!-- 2. Born -->
+        <section id="view-born" class="view-section">
+          <h1 class="view-title">私が生まれてから</h1>
+          <div class="timer-display" id="timer-born"></div>
+        </section>
+        
+        <!-- 3. Custom Dashboard (1層目) -->
+        <section id="view-custom-dashboard" class="view-section scrollable" style="padding: 24px 20px;">
+          <div class="dashboard-header">
+            <h1 class="view-title" style="margin-bottom: 0;">Custom Timers</h1>
+            <button id="btn-open-add-modal" class="btn-icon-add">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+          <div id="custom-dashboard-list" class="custom-dashboard-list">
+            <!-- JSでカードが生成される -->
+          </div>
+        </section>
+        
+        <!-- 4. Settings (カスタム関連を排除し純化) -->
+        <section id="view-settings" class="view-section scrollable">
+          <h1 class="view-title">Settings</h1>
+          <div class="settings-form">
+            <div class="form-group">
+              <label>生まれた日付</label>
+              <div class="date-picker-group" id="picker-birth"></div>
+              <div class="error-msg" id="error-birth">未来の日付は選択できません</div>
+            </div>
+            <div class="form-group">
+              <label>寿命</label>
+              <div id="input-life-wrap"></div>
+            </div>
+            <button id="btn-save-settings" class="btn-primary" style="margin-top: 40px;">保存して反映</button>
+          </div>
+        </section>
+        
+      </div>
+    </main>
 
-  <!-- タイマー0時や完了時の通知バナー -->
-  <div id="notification-banner" class="notification-banner">
-    <div id="notification-text" class="notification-text">次のセットを開始</div>
+    <!-- ボトムナビゲーション -->
+    <nav class="floating-tab-bar" id="bottom-nav">
+      <button class="tab-item active" data-tab="view-life">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Life</span>
+      </button>
+      <button class="tab-item" data-tab="view-born">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg><span>Born</span>
+      </button>
+      <button class="tab-item" data-tab="view-custom-dashboard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/></svg><span>Custom</span>
+      </button>
+      <button class="tab-item" data-tab="view-settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg><span>Setting</span>
+      </button>
+    </nav>
   </div>
 
-  <!-- ヘッダー (ハンバーガーメニュー配置) -->
-  <header class="app-header">
-    <div class="header-title">Life Tracker</div>
-    <button id="btn-hamburger" class="btn-hamburger">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <line x1="3" y1="12" x2="21" y2="12"></line>
-        <line x1="3" y1="6" x2="21" y2="6"></line>
-        <line x1="3" y1="18" x2="21" y2="18"></line>
-      </svg>
-    </button>
-  </header>
-
-  <!-- メインコンテンツ (スワイプ領域) -->
-  <main id="main-content">
-    <div id="swipe-wrapper">
-      <section id="view-life" class="view-section">
-        <h1 class="view-title">Life Limit</h1>
-        <div id="timer-life" class="timer-display"></div>
-      </section>
-      
-      <section id="view-born" class="view-section">
-        <h1 class="view-title">Time Alive</h1>
-        <div id="timer-born" class="timer-display"></div>
-      </section>
-
-      <section id="view-custom-empty" class="view-section" style="display:none;">
-        <h1 class="view-title" style="color: #666; font-size: 1.2rem;">カスタムタイマーはありません</h1>
-      </section>
-    </div>
-  </main>
-
-  <!-- ボトムナビゲーション -->
-  <nav id="bottom-nav" class="floating-nav">
-    <button class="tab-item active" data-tab="view-life">Life</button>
-    <button class="tab-item" data-tab="view-born">Born</button>
-    
-    <!-- 中央の巨大FAB (トレーニング追加ボタン) -->
-    <div class="fab-wrapper">
-      <div class="fab-cutout"></div>
-      <button id="btn-add-training" class="fab-button">
-        <!-- ダンベルアイコン -->
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M6.5 6.5h11M6.5 17.5h11M4 9h16v6H4zM2 10.5h2v3H2zM20 10.5h2v3h-2z"/>
-        </svg>
-      </button>
-    </div>
-
-    <button class="tab-item" data-tab="view-custom">Custom</button>
-    <!-- インジケーター表示用スペース -->
-    <div id="custom-indicators" class="indicators-container"></div>
-  </nav>
-
-  <!-- Settings ドロワー (ハンバーガーメニューから開く) -->
-  <div id="settings-drawer" class="settings-drawer">
-    <div class="drawer-header">
-      <h2>設定</h2>
-      <button id="btn-close-settings" class="btn-close">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-      </button>
-    </div>
-    <div class="drawer-content" id="view-settings">
-      <div class="settings-section">
-        <label class="custom-input-label">生年月日</label>
-        <div id="picker-birth" class="date-picker-group"></div>
-      </div>
-      <div class="settings-section">
-        <label class="custom-input-label">想定寿命</label>
-        <div id="input-life-wrap"></div>
-      </div>
-      <div class="settings-section">
-        <label class="custom-input-label">カスタムタイマー</label>
-        <div id="custom-settings-list"></div>
-        <button id="btn-add-custom" class="btn-action">+ 追加</button>
-      </div>
-      <button id="btn-save-settings" class="btn-primary">保存して反映</button>
-    </div>
-  </div>
-
-  <!-- 種目追加用 Morphing モーダル -->
-  <div id="morph-modal" class="morph-modal">
+  <!-- 2層目：詳細タイマー（モーダル内でスワイプ可能） -->
+  <div id="custom-detail-modal" class="apple-modal">
     <div class="modal-header">
-      <h2>トレーニングを追加</h2>
-      <button id="btn-close-morph" class="btn-close">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      <button id="btn-close-detail" class="btn-text">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 18 9 12 15 6"/></svg> 戻る
       </button>
+      <span id="detail-pagination" class="modal-pagination">1 / 1</span>
+      <div style="width: 60px;"></div> <!-- レイアウト用ダミー -->
     </div>
-    <div class="modal-content">
-      <!-- トレーニング追加のUI要素を配置 -->
-      <p style="color:#888; text-align:center; margin-top:50px;">ここに種目やセットの追加UIを実装します。</p>
-    </div>
-  </div>
-
-  <!-- 初回セットアップ用オーバーレイ -->
-  <div id="setup-overlay" class="setup-overlay">
-    <div class="setup-box">
-      <h2>初期設定</h2>
-      <p>生年月日を入力してください</p>
-      <!-- 初期化時にここにピッカーがインジェクトされる想定 -->
-      <button id="btn-start-setup" class="btn-primary" style="margin-top: 20px;">はじめる</button>
+    <div class="modal-body viewport">
+      <div id="custom-detail-swipe-wrapper" class="swipe-wrapper">
+        <!-- JSで各タイマー画面が生成される -->
+      </div>
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <!-- 追加用ダイアログ -->
+  <div id="custom-add-modal" class="apple-modal center-dialog">
+    <div class="dialog-content">
+      <h2 style="margin-bottom: 24px; font-size: 1.2rem;">新規カスタムタイマー</h2>
+      <div class="form-group" style="margin-bottom: 24px;">
+        <label>タイトル</label>
+        <input type="text" id="new-custom-title" class="input-field" placeholder="例: 禁煙">
+      </div>
+      <div class="form-group" style="margin-bottom: 32px;">
+        <label>開始した日付</label>
+        <div class="date-picker-group" id="picker-new-custom"></div>
+        <div class="error-msg" id="error-new-custom">未来の日付は選択できません</div>
+      </div>
+      <div style="display: flex; gap: 12px;">
+        <button id="btn-cancel-add" class="btn-secondary" style="flex: 1; padding: 16px;">キャンセル</button>
+        <button id="btn-save-new-custom" class="btn-primary" style="flex: 1; padding: 16px;">追加する</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- キャッシュ強制更新 v10 -->
+  <script src="app.js?v=10"></script>
 </body>
 </html>
