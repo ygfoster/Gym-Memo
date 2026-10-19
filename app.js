@@ -241,7 +241,7 @@ async function startRestTimer() {
       
       // 5回の長いバイブレーションを発動
       vibrateTimerEnd();
-      showToast("TIMER COMPLETE!", 'success');
+      showToast("次のセットを開始", 'success');
       
       if (wakeLock !== null) wakeLock.release().then(() => wakeLock = null);
       // ★修正：バイブレーションが完全に終わる（約4.5秒）のを待ってからリセットする（上書きキャンセル防止）
