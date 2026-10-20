@@ -14,19 +14,11 @@
   <link rel="apple-touch-icon" href="icon.png">
   
   <title>ジムメモ</title>
-  
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then(function(registrations) {
-        for(let registration of registrations) { registration.unregister(); }
-      });
-    }
-  </script>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600;700&family=Oswald:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./style.css?v=207">
+  <link rel="stylesheet" href="./style.css?v=209">
 </head>
 <body>
   
@@ -104,15 +96,15 @@
       <div class="vitals-card">
         <div class="vitals-card-caption" id="detail-vitals-caption"></div>
         <div class="vitals-primary-row">
-          <div><div class="vital-metric-label">当日のカロリー収支</div><div class="vital-balance-val" id="detail-cal-balance">--</div></div>
-          <div><div class="vital-metric-label" style="text-align: right;">今朝の睡眠時間</div><div class="vital-sleep-val" id="detail-sleep-time">--</div></div>
+          <div><div class="vital-metric-label">当日のカロリー収支</div><div class="vital-balance-val skeleton-loading" id="detail-cal-balance">&nbsp;</div></div>
+          <div><div class="vital-metric-label" style="text-align: right;">今朝の睡眠時間</div><div class="vital-sleep-val skeleton-loading" id="detail-sleep-time">&nbsp;</div></div>
         </div>
         <div class="vitals-secondary-grid">
-          <div class="vital-sub-item"><div class="vital-sub-label">摂取</div><div class="vital-sub-val" id="detail-cal-intake">--</div></div>
-          <div class="vital-sub-item"><div class="vital-sub-label">消費</div><div class="vital-sub-val" id="detail-cal-burned">--</div></div>
-          <div class="vital-sub-item"><div class="vital-sub-label">P</div><div class="vital-sub-val" id="detail-p-val">--</div></div>
-          <div class="vital-sub-item"><div class="vital-sub-label">F</div><div class="vital-sub-val" id="detail-f-val">--</div></div>
-          <div class="vital-sub-item"><div class="vital-sub-label">C</div><div class="vital-sub-val" id="detail-c-val">--</div></div>
+          <div class="vital-sub-item"><div class="vital-sub-label">摂取</div><div class="vital-sub-val skeleton-loading" id="detail-cal-intake">&nbsp;</div></div>
+          <div class="vital-sub-item"><div class="vital-sub-label">消費</div><div class="vital-sub-val skeleton-loading" id="detail-cal-burned">&nbsp;</div></div>
+          <div class="vital-sub-item"><div class="vital-sub-label">P</div><div class="vital-sub-val skeleton-loading" id="detail-p-val">&nbsp;</div></div>
+          <div class="vital-sub-item"><div class="vital-sub-label">F</div><div class="vital-sub-val skeleton-loading" id="detail-f-val">&nbsp;</div></div>
+          <div class="vital-sub-item"><div class="vital-sub-label">C</div><div class="vital-sub-val skeleton-loading" id="detail-c-val">&nbsp;</div></div>
         </div>
       </div>
       <div id="day-summary-container" style="display: none;"></div>
@@ -143,15 +135,15 @@
         <div class="vitals-card">
           <div class="vitals-card-caption" id="form-vitals-caption"></div>
           <div class="vitals-primary-row">
-            <div><div class="vital-metric-label">当日のカロリー収支</div><div class="vital-balance-val" id="cal-balance">--</div></div>
-            <div><div class="vital-metric-label" style="text-align: right;">今朝の睡眠時間</div><div class="vital-sleep-val" id="sleep-time">--</div></div>
+            <div><div class="vital-metric-label">当日のカロリー収支</div><div class="vital-balance-val skeleton-loading" id="cal-balance">&nbsp;</div></div>
+            <div><div class="vital-metric-label" style="text-align: right;">今朝の睡眠時間</div><div class="vital-sleep-val skeleton-loading" id="sleep-time">&nbsp;</div></div>
           </div>
           <div class="vitals-secondary-grid">
-            <div class="vital-sub-item"><div class="vital-sub-label">摂取</div><div class="vital-sub-val" id="cal-intake">--</div></div>
-            <div class="vital-sub-item"><div class="vital-sub-label">消費</div><div class="vital-sub-val" id="cal-burned">--</div></div>
-            <div class="vital-sub-item"><div class="vital-sub-label">P</div><div class="vital-sub-val" id="p-val">--</div></div>
-            <div class="vital-sub-item"><div class="vital-sub-label">F</div><div class="vital-sub-val" id="f-val-log">--</div></div>
-            <div class="vital-sub-item"><div class="vital-sub-label">C</div><div class="vital-sub-val" id="c-val-log">--</div></div>
+            <div class="vital-sub-item"><div class="vital-sub-label">摂取</div><div class="vital-sub-val skeleton-loading" id="cal-intake">&nbsp;</div></div>
+            <div class="vital-sub-item"><div class="vital-sub-label">消費</div><div class="vital-sub-val skeleton-loading" id="cal-burned">&nbsp;</div></div>
+            <div class="vital-sub-item"><div class="vital-sub-label">P</div><div class="vital-sub-val skeleton-loading" id="p-val">&nbsp;</div></div>
+            <div class="vital-sub-item"><div class="vital-sub-label">F</div><div class="vital-sub-val skeleton-loading" id="f-val-log">&nbsp;</div></div>
+            <div class="vital-sub-item"><div class="vital-sub-label">C</div><div class="vital-sub-val skeleton-loading" id="c-val-log">&nbsp;</div></div>
           </div>
         </div>
         
@@ -251,7 +243,7 @@
       <div id="chart-volume-container" style="padding: 8px; position: relative; height: 260px;"><canvas id="volumeChart"></canvas></div>
     </div>
 
-    <!-- 5. 設定画面（ハンバーガーメニューから遷移） -->
+    <!-- 5. 設定画面 -->
     <div id="view-settings" style="display: none;" x-data="settingsForm" x-cloak>
       <div class="top-nav">
         <button class="nav-back" onclick="navigateBack()"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg> ホーム</button>
@@ -309,7 +301,6 @@
     </div>
   </div>
 
-  <!-- タイマーとTOTAL（左側に配置） -->
   <div id="floating-total" class="floating-widget"><div class="floating-total-label">TOTAL</div><div id="floating-total-time" class="floating-total-time">00:00</div></div>
   <div id="floating-rest" class="floating-widget"><div class="rest-circle"><span id="floating-rest-time">03:00</span></div><button id="floating-rest-play" class="float-btn-play" onclick="vibrateMedium(); toggleRestTimer()"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg></button><button id="floating-rest-reset" class="float-btn-reset" onclick="vibrateSmall(); resetRestTimer()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg></button></div>
 
@@ -343,6 +334,6 @@
       <div class="nav-text">TIMER</div>
     </div>
   </div>
-<script src="./app.js?v=208"></script>
+  <script src="./app.js?v=209"></script>
 </body>
 </html>
