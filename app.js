@@ -51,7 +51,7 @@ function safeJsonParse(raw, fallback) {
 /* ======================================================================
    2. 定数・グローバル状態管理
 ====================================================================== */
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbwTreNAF4AVwdAFRIdeVIqR4dYn87RgbSP0-u-0n3_90oCl_7ZlBlwADXWUvCsv4kELrg/exec';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbw52_ZuXSDdS_d-yw5oZIJnV8EoXfOkuKcEL4j2LeRf8Lph-U41dkiNY9BX0UfHcOVw4Q/exec';
 const API_TOKEN = "MyGymAppSecretToken_2026";
 
 let globalTrainingHistory = [];
