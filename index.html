@@ -13,7 +13,7 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon.png">
   
-  <title>ジムメモ</title>
+  <title>GmyMo</title>
 
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
@@ -52,7 +52,7 @@
     <!-- 1. ホーム画面 -->
     <div id="view-home" style="display: none;">
       <div class="top-nav" style="margin-bottom: 16px;">
-        <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-primary); letter-spacing: 0.05em;">GYM MEMO</div>
+        <div style="font-size: 1.4rem; font-weight: 700; color: var(--text-primary); letter-spacing: 0.05em;">GymMo</div>
         <button class="nav-hamburger" onclick="vibrateSmall(); switchTab('settings')" title="設定">
           <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
         </button>
@@ -96,8 +96,8 @@
       <div class="vitals-card">
         <div class="vitals-card-caption" id="detail-vitals-caption"></div>
         <div class="vitals-primary-row">
-          <div><div class="vital-metric-label">当日のカロリー収支</div><div class="vital-balance-val skeleton-loading" id="detail-cal-balance">&nbsp;</div></div>
-          <div><div class="vital-metric-label" style="text-align: right;">今朝の睡眠時間</div><div class="vital-sleep-val skeleton-loading" id="detail-sleep-time">&nbsp;</div></div>
+          <div><div class="vital-metric-label">カロリー収支</div><div class="vital-balance-val skeleton-loading" id="detail-cal-balance">&nbsp;</div></div>
+          <div><div class="vital-metric-label" style="text-align: right;">睡眠時間</div><div class="vital-sleep-val skeleton-loading" id="detail-sleep-time">&nbsp;</div></div>
         </div>
         <div class="vitals-secondary-grid">
           <div class="vital-sub-item"><div class="vital-sub-label">摂取</div><div class="vital-sub-val skeleton-loading" id="detail-cal-intake">&nbsp;</div></div>
@@ -135,8 +135,8 @@
         <div class="vitals-card">
           <div class="vitals-card-caption" id="form-vitals-caption"></div>
           <div class="vitals-primary-row">
-            <div><div class="vital-metric-label">当日のカロリー収支</div><div class="vital-balance-val skeleton-loading" id="cal-balance">&nbsp;</div></div>
-            <div><div class="vital-metric-label" style="text-align: right;">今朝の睡眠時間</div><div class="vital-sleep-val skeleton-loading" id="sleep-time">&nbsp;</div></div>
+            <div><div class="vital-metric-label">カロリー収支</div><div class="vital-balance-val skeleton-loading" id="cal-balance">&nbsp;</div></div>
+            <div><div class="vital-metric-label" style="text-align: right;">睡眠時間</div><div class="vital-sleep-val skeleton-loading" id="sleep-time">&nbsp;</div></div>
           </div>
           <div class="vitals-secondary-grid">
             <div class="vital-sub-item"><div class="vital-sub-label">摂取</div><div class="vital-sub-val skeleton-loading" id="cal-intake">&nbsp;</div></div>
@@ -237,9 +237,9 @@
         <button class="period-btn" id="period-btn-6M" onclick="vibrateSmall(); setGraphPeriod('6M')">6M</button>
         <button class="period-btn active" id="period-btn-ALL" onclick="vibrateSmall(); setGraphPeriod('ALL')">ALL</button>
       </div>
-      <div class="section-header" style="margin-top: 12px;"><span class="section-label">1RM PROGRESS (推定最大重量)</span></div>
+      <div class="section-header" style="margin-top: 12px;"><span class="section-label">1RM PROGRESS</span></div>
       <div id="chart-rm-container" style="padding: 8px; position: relative; height: 260px;"><canvas id="rmChart"></canvas></div>
-      <div class="section-header" style="margin-top: 24px;"><span class="section-label">VOLUME PROGRESS (総重量)</span></div>
+      <div class="section-header" style="margin-top: 24px;"><span class="section-label">VOLUME PROGRESS</span></div>
       <div id="chart-volume-container" style="padding: 8px; position: relative; height: 260px;"><canvas id="volumeChart"></canvas></div>
     </div>
 
