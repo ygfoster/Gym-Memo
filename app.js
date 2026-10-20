@@ -24,7 +24,6 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// 安全なDOM取得・テキスト更新ヘルパー
 function getEl(id) {
   return document.getElementById(id);
 }
@@ -60,7 +59,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v207"; // キャッシュ強制リフレッシュ
+const DATA_CACHE_KEY = "workout_app_data_cache_v208"; // ★古い空キャッシュを強制破棄
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -108,13 +107,13 @@ window.showToast = function(message, type = 'success') {
   setTimeout(() => {
     toast.classList.remove('show');
     setTimeout(() => toast.remove(), 350);
-  }, 3200);
+  }, 3500);
 };
 
 /* ======================================================================
    3. 通信ラッパー（エラー原因を正確にキャッチするAPIクライアント）
 ====================================================================== */
-async function apiFetch(url, options = {}, timeout = 15000) {
+async function apiFetch(url, options = {}, timeout = 20000) {
   const controller = new AbortController();
   const timerId = setTimeout(() => controller.abort(), timeout);
   try {
@@ -137,24 +136,21 @@ async function apiFetch(url, options = {}, timeout = 15000) {
   } catch (err) {
     clearTimeout(timerId);
     if (err.name === 'AbortError') {
-      throw new Error('通信がタイムアウトしました (15秒経過)');
+      throw new Error('通信がタイムアウトしました');
     }
     throw err;
   }
 }
 
 /* ======================================================================
-   4. 日付正規化・データ解析ユーティリティ（1日ズレバグの完全修正）
+   4. 日付正規化・データ解析ユーティリティ
 ====================================================================== */
-// ★修正: GASからISO文字列("2026-10-19T15:00:00.000Z"等)が来た場合でも、
-// 必ず日本時間(ローカルタイム)の年月日に変換してから正規化する
 function normalizeDateStr(s) {
   if (!s) return "";
   if (s instanceof Date && !isNaN(s.getTime())) {
     return `${s.getFullYear()}/${s.getMonth() + 1}/${s.getDate()}`;
   }
   const str = String(s).trim();
-  // ISO 8601形式（Tを含む日時文字列）の場合はDateオブジェクト経由でローカル日付を取得
   if (str.includes('T')) {
     const d = new Date(str);
     if (!isNaN(d.getTime())) {
@@ -166,7 +162,6 @@ function normalizeDateStr(s) {
     let y = parseInt(n[0], 10);
     let m = parseInt(n[1], 10);
     let d = parseInt(n[2], 10);
-    // 万が一 MM/DD/YYYY の順で入っていた場合の補正
     if (y <= 12 && d >= 1900) {
       return `${d}/${y}/${m}`;
     }
@@ -219,10 +214,8 @@ function parseDetailsToSets(s) {
 /* ======================================================================
    5. Googleヘルス（バイタル）データの統合・取得・表示ロジック
 ====================================================================== */
-// データのキー揺れや空判定を安全に吸収するヘルパー
 function extractHealthRecord(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  // GASのレスポンスが { currentData: {...} } や { data: {...} } でラップされている場合にも対応
   const target = raw.currentData || raw.data || raw;
   const dateVal = target.date || target.targetDate || "";
   const sleep = target.sleep ?? target.sleepTime ?? "";
@@ -236,14 +229,31 @@ function extractHealthRecord(raw) {
   return { date: dateVal, sleep, balance, intake, burned, protein, fat, carb };
 }
 
+// ★重要修正: GASから「0」が返ってきた場合（未取得時）は有効データとみなさず再取得対象にする
+function isMeaningfulMetric(v) {
+  if (v === undefined || v === null) return false;
+  const s = String(v).trim();
+  return s !== "" && s !== "-" && s !== "--" && s !== "..." && s !== "0" && s !== "0 kcal" && !s.includes("#") && s !== "NaN";
+}
+
 function hasValidHealthMetrics(rec) {
   if (!rec) return false;
-  const fields = [rec.sleep, rec.balance, rec.intake, rec.burned, rec.protein, rec.fat, rec.carb];
-  return fields.some(v => {
-    if (v === undefined || v === null) return false;
-    const s = String(v).trim();
-    return s !== "" && s !== "-" && s !== "--" && !s.includes("#") && s !== "NaN";
-  });
+  return [rec.sleep, rec.intake, rec.burned, rec.protein, rec.fat, rec.carb].some(isMeaningfulMetric);
+}
+
+function mergeTwoHealthRecords(oldRec, newRec) {
+  if (!oldRec) return newRec;
+  if (!newRec) return oldRec;
+  return {
+    date: newRec.date || oldRec.date,
+    sleep: isMeaningfulMetric(newRec.sleep) ? newRec.sleep : oldRec.sleep,
+    balance: isMeaningfulMetric(newRec.balance) ? newRec.balance : oldRec.balance,
+    intake: isMeaningfulMetric(newRec.intake) ? newRec.intake : oldRec.intake,
+    burned: isMeaningfulMetric(newRec.burned) ? newRec.burned : oldRec.burned,
+    protein: isMeaningfulMetric(newRec.protein) ? newRec.protein : oldRec.protein,
+    fat: isMeaningfulMetric(newRec.fat) ? newRec.fat : oldRec.fat,
+    carb: isMeaningfulMetric(newRec.carb) ? newRec.carb : oldRec.carb
+  };
 }
 
 function ingestHealthDataFromResponse(data) {
@@ -253,10 +263,7 @@ function ingestHealthDataFromResponse(data) {
       const rec = extractHealthRecord(item);
       if (rec && rec.date) {
         const key = normalizeDateStr(rec.date);
-        // 既に有効なデータがある場合は、空データで上書きしない
-        if (!globalHealthMap[key] || hasValidHealthMetrics(rec)) {
-          globalHealthMap[key] = rec;
-        }
+        globalHealthMap[key] = mergeTwoHealthRecords(globalHealthMap[key], rec);
       }
     });
   }
@@ -264,28 +271,26 @@ function ingestHealthDataFromResponse(data) {
     const cur = extractHealthRecord(data.currentData);
     if (cur && cur.date) {
       const key = normalizeDateStr(cur.date);
-      if (!globalHealthMap[key] || hasValidHealthMetrics(cur)) {
-        globalHealthMap[key] = cur;
-      }
+      globalHealthMap[key] = mergeTwoHealthRecords(globalHealthMap[key], cur);
     }
   }
 }
 
 function cleanMetric(v, fallback = "--") {
-  if (v === undefined || v === null) return fallback;
-  const s = String(v).trim();
-  if (s === "" || s === "-" || s.includes("#") || s === "NaN" || s === "null" || s === "undefined") {
-    return fallback;
-  }
-  return s;
+  if (!isMeaningfulMetric(v)) return fallback;
+  return String(v).trim();
 }
 
-function formatCalorieBalance(val, fallback = "--") {
+function formatCalorieBalance(rec, fallback = "--") {
+  if (!rec) return fallback;
+  const hasInOrOut = isMeaningfulMetric(rec.intake) || isMeaningfulMetric(rec.burned);
+  const val = rec.balance;
   if (val === undefined || val === null) return fallback;
   const s = String(val).trim();
   if (s === "" || s === "-" || s === "--" || s.includes("#") || s === "NaN") return fallback;
   const num = parseInt(s.replace(/[^-0-9]/g, ""), 10);
   if (isNaN(num)) return s;
+  if (num === 0 && !hasInOrOut) return fallback;
   return (num > 0 ? "+" : "") + num.toLocaleString() + " kcal";
 }
 
@@ -304,15 +309,14 @@ function renderVitalsToDOM(data, prefix, isLoading = false) {
   const cId = getEl(prefix + "c-val") ? (prefix + "c-val") : (prefix + "c-val-log");
   setText(cId, rec ? cleanMetric(rec.carb, placeholder) : placeholder);
 
-  setText(prefix + "cal-balance", rec ? formatCalorieBalance(rec.balance, placeholder) : placeholder);
+  setText(prefix + "cal-balance", rec ? formatCalorieBalance(rec, placeholder) : placeholder);
 }
 
-// ★改善: 当日（dateKey）のヘルスデータを確実に取得・表示する
+// 当日（dateKey）のヘルスデータを確実に取得・表示する
 async function loadHealthDataIntoPrefix(dateKey, prefix) {
   const normKey = normalizeDateStr(dateKey);
   const cached = globalHealthMap[normKey];
 
-  // キャッシュに有効な数値がある場合は即座に表示
   if (cached && hasValidHealthMetrics(cached)) {
     renderVitalsToDOM(cached, prefix, false);
   } else {
@@ -321,32 +325,25 @@ async function loadHealthDataIntoPrefix(dateKey, prefix) {
 
   if (!navigator.onLine) return;
 
-  // キャッシュが空、または最新値を確認するためバックグラウンドで個別日付データを取得
+  // 睡眠またはカロリーのどちらかが欠けている場合は、必ずGASの個別取得APIに問い合わせて補完する
+  const isComplete = cached && isMeaningfulMetric(cached.sleep) && (isMeaningfulMetric(cached.intake) || isMeaningfulMetric(cached.burned));
+  if (isComplete) return;
+
   try {
     const queryDate = formatWithZeroPad(normKey);
     const url = `${GAS_URL}?action=getDataForDate&date=${encodeURIComponent(queryDate)}&token=${encodeURIComponent(API_TOKEN)}`;
-    const resData = await apiFetch(url, {}, 15000);
+    const resData = await apiFetch(url, {}, 20000);
     const rec = extractHealthRecord(resData);
 
     if (rec && hasValidHealthMetrics(rec)) {
-      globalHealthMap[normKey] = rec;
-      // 画面が切り替わっていない場合のみDOMを更新
+      const merged = mergeTwoHealthRecords(cached, rec);
+      globalHealthMap[normKey] = merged;
+
       const currentTargetKey = prefix === "detail-" ? currentDetailDateKey : normalizeDateStr(currentRecordingDateStr);
       if (currentTargetKey === normKey) {
-        renderVitalsToDOM(rec, prefix, false);
+        renderVitalsToDOM(merged, prefix, false);
       }
     } else if (!cached || !hasValidHealthMetrics(cached)) {
-      // ゼロ埋めなしの日付文字列でもう一度だけフォールバック検索
-      if (queryDate !== normKey) {
-        const retryUrl = `${GAS_URL}?action=getDataForDate&date=${encodeURIComponent(normKey)}&token=${encodeURIComponent(API_TOKEN)}`;
-        const retryData = await apiFetch(retryUrl, {}, 12000);
-        const retryRec = extractHealthRecord(retryData);
-        if (retryRec && hasValidHealthMetrics(retryRec)) {
-          globalHealthMap[normKey] = retryRec;
-          renderVitalsToDOM(retryRec, prefix, false);
-          return;
-        }
-      }
       renderVitalsToDOM(null, prefix, false);
     }
   } catch (err) {
@@ -385,16 +382,20 @@ document.addEventListener("DOMContentLoaded", function() {
 
   // 最新データの初期同期
   const initUrl = `${GAS_URL}?action=getInitialData&limit=60&offset=0&token=${encodeURIComponent(API_TOKEN)}`;
-  apiFetch(initUrl, {}, 15000)
+  apiFetch(initUrl, {}, 20000)
     .then(data => {
       const loadingEl = getEl("loading");
       if (loadingEl) loadingEl.style.display = "none";
+
+      if (data.authWarning && !window._authWarnShown) {
+        window._authWarnShown = true;
+        showToast(data.authWarning, 'error');
+      }
 
       localStorage.setItem(DATA_CACHE_KEY, JSON.stringify(data));
       globalTrainingHistory = data.trainingHistory || [];
       ingestHealthDataFromResponse(data);
 
-      // 現在表示中の画面に合わせて最新データを即時反映
       const cV = getCurrentVisibleView();
       if (cV === 'home') {
         renderHomeCalendar();
@@ -838,14 +839,20 @@ document.addEventListener('alpine:init', () => {
       this.isSaving = true;
       showSavingOverlay();
 
+      // "--" や "..." は空文字に変換して送信し、スプレッドシートの既存データを壊さないようにする
+      const cleanDomVal = (id) => {
+        const val = getEl(id)?.innerText || "";
+        return isMeaningfulMetric(val) ? val : "";
+      };
+
       const conditionData = {
-        sleep: getEl("sleep-time")?.innerText || "",
-        balance: getEl("cal-balance")?.innerText || "",
-        intake: getEl("cal-intake")?.innerText || "",
-        burned: getEl("cal-burned")?.innerText || "",
-        protein: getEl("p-val")?.innerText || "",
-        fat: getEl("f-val-log")?.innerText || "",
-        carb: getEl("c-val-log")?.innerText || ""
+        sleep: cleanDomVal("sleep-time"),
+        balance: cleanDomVal("cal-balance"),
+        intake: cleanDomVal("cal-intake"),
+        burned: cleanDomVal("cal-burned"),
+        protein: cleanDomVal("p-val"),
+        fat: cleanDomVal("f-val-log"),
+        carb: cleanDomVal("c-val-log")
       };
 
       const payload = { action: 'saveTrainingLog', targetDate: tD, trainingData: tData, conditionData: conditionData, token: API_TOKEN };
@@ -1080,7 +1087,6 @@ window.shiftLogDay = function(offset) {
   openDashboardForDate(formatDateKey(n), false, offset > 0 ? "slide-anim-from-right" : "slide-anim-from-left");
 };
 
-// Morphing Animation (中央の追加ボタンから展開)
 function triggerMorphingAnimation(callback) {
   const morph = document.createElement('div');
   morph.className = 'morph-overlay';
@@ -1104,7 +1110,7 @@ function triggerMorphingAnimation(callback) {
   }, 320);
 }
 
-// ★修正: 当日（dO）のカロリー収支＆今朝の睡眠時間を取得・表示
+// 当日（dO）のカロリー収支＆今朝の睡眠時間を取得・表示
 window.openDashboardForDate = function(tK, sH, slideClass, useMorph = false) {
   const proceed = () => {
     vibrateSmall();
@@ -1121,7 +1127,6 @@ window.openDashboardForDate = function(tK, sH, slideClass, useMorph = false) {
     const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
     setText("form-vitals-caption", `当日の栄養・今朝の睡眠: ${tStr}`);
 
-    // 当日のヘルスデータを読み込む
     loadHealthDataIntoPrefix(targetDateKey, "");
 
     if (window.alpineWorkoutForm) {
@@ -1354,7 +1359,7 @@ window.confirmDeleteFromDetail = function() {
   });
 };
 
-// ★修正: 詳細画面でも当日（currentDetailDateKey）のヘルスデータを表示する
+// 詳細画面でも当日（currentDetailDateKey）のヘルスデータを表示する
 function openDayDetailView(dK, dL, fV, sC, sH) {
   if (fV) previousViewBeforeDetail = fV;
   currentDetailDateKey = normalizeDateStr(dK);
@@ -1372,7 +1377,6 @@ function openDayDetailView(dK, dL, fV, sC, sH) {
   const tStr = `${dO.getMonth() + 1}/${dO.getDate()}(${DAY_LABELS_SHORT[dO.getDay()]})`;
   setText("detail-vitals-caption", `当日の栄養・今朝の睡眠: ${tStr}`);
 
-  // 当日のヘルスデータを読み込む
   loadHealthDataIntoPrefix(currentDetailDateKey, "detail-");
 
   const s = getEl("day-summary-container"), c = getEl("day-detail-content"), b = getEl("day-detail-edit-btn"), del = getEl("day-detail-delete-btn");
