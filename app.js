@@ -1,27 +1,34 @@
 /* ======================================================================
-   1. グローバルエラー監視 & ユーティリティ（エラーの可視化・堅牢設計）
+   1. グローバルエラー監視 & ユーティリティ
 ====================================================================== */
 window.addEventListener('error', function(event) {
-  console.error('[Global Error]', event.message, event.filename, event.lineno);
+  const msg = event.message || '';
+  if (msg.includes('ServiceWorker') || msg.includes('sw.js') || msg.includes('ResizeObserver')) return;
+  console.error('[Global Error]', msg, event.filename, event.lineno);
   if (window.showToast) {
-    window.showToast(`システムエラー: ${event.message}`, 'error');
+    window.showToast(`システムエラー: ${msg}`, 'error');
   }
 });
 
 window.addEventListener('unhandledrejection', function(event) {
-  const reason = event.reason ? (event.reason.message || String(event.reason)) : '不明な非同期エラー';
+  const reason = event.reason ? (event.reason.message || String(event.reason)) : '';
+  // ServiceWorkerやWakeLock等の無害なブラウザ内部拒否は無視してバナーを出さない
+  if (!reason || reason.includes('ServiceWorker') || reason.includes('sw.js') || reason.includes('WakeLock') || reason.includes('AbortError')) {
+    return;
+  }
   console.error('[Unhandled Rejection]', reason);
   if (window.showToast) {
     window.showToast(`通信・処理エラー: ${reason}`, 'error');
   }
 });
 
+// 過去にキャッシュされた不要なServiceWorkerがあれば静かに解除する（sw.jsの404エラー防止）
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').then(reg => {
-      reg.update();
-    }).catch(err => console.warn('[SW Register Warn]', err));
-  });
+  navigator.serviceWorker.getRegistrations().then(function(registrations) {
+    for (let registration of registrations) {
+      registration.unregister().catch(function() {});
+    }
+  }).catch(function() {});
 }
 
 function getEl(id) {
@@ -59,7 +66,7 @@ let pendingDeleteAction = null;
 
 const STORAGE_VIEW_KEY = "workout_app_last_view_v1";
 const STORAGE_DRAFT_PREFIX = "workout_app_draft_v1_";
-const DATA_CACHE_KEY = "workout_app_data_cache_v208"; // ★古い空キャッシュを強制破棄
+const DATA_CACHE_KEY = "workout_app_data_cache_v209";
 const OFFLINE_QUEUE_KEY = "workout_app_offline_queue_v1";
 const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const DAY_LABELS_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
@@ -93,7 +100,7 @@ window.vibrateTimerEnd = function() {
   }
 };
 
-// トースト通知（緑色を完全排除・エラー内容を明確に表示）
+// トースト通知
 window.showToast = function(message, type = 'success') {
   const container = getEl('toast-container');
   if (!container) return;
@@ -111,7 +118,7 @@ window.showToast = function(message, type = 'success') {
 };
 
 /* ======================================================================
-   3. 通信ラッパー（エラー原因を正確にキャッチするAPIクライアント）
+   3. 通信ラッパー
 ====================================================================== */
 async function apiFetch(url, options = {}, timeout = 20000) {
   const controller = new AbortController();
@@ -212,7 +219,7 @@ function parseDetailsToSets(s) {
 }
 
 /* ======================================================================
-   5. Googleヘルス（バイタル）データの統合・取得・表示ロジック
+   5. Googleヘルス（バイタル）データの統合・取得・スケルトン表示ロジック
 ====================================================================== */
 function extractHealthRecord(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -229,7 +236,6 @@ function extractHealthRecord(raw) {
   return { date: dateVal, sleep, balance, intake, burned, protein, fat, carb };
 }
 
-// ★重要修正: GASから「0」が返ってきた場合（未取得時）は有効データとみなさず再取得対象にする
 function isMeaningfulMetric(v) {
   if (v === undefined || v === null) return false;
   const s = String(v).trim();
@@ -294,25 +300,35 @@ function formatCalorieBalance(rec, fallback = "--") {
   return (num > 0 ? "+" : "") + num.toLocaleString() + " kcal";
 }
 
-function renderVitalsToDOM(data, prefix, isLoading = false) {
-  const placeholder = isLoading ? "..." : "--";
-  const rec = extractHealthRecord(data);
-
-  setText(prefix + "sleep-time", rec ? cleanMetric(rec.sleep, placeholder) : placeholder);
-  setText(prefix + "cal-intake", rec ? cleanMetric(rec.intake, placeholder) : placeholder);
-  setText(prefix + "cal-burned", rec ? cleanMetric(rec.burned, placeholder) : placeholder);
-  setText(prefix + "p-val", rec ? cleanMetric(rec.protein, placeholder) : placeholder);
-
-  const fId = getEl(prefix + "f-val") ? (prefix + "f-val") : (prefix + "f-val-log");
-  setText(fId, rec ? cleanMetric(rec.fat, placeholder) : placeholder);
-
-  const cId = getEl(prefix + "c-val") ? (prefix + "c-val") : (prefix + "c-val-log");
-  setText(cId, rec ? cleanMetric(rec.carb, placeholder) : placeholder);
-
-  setText(prefix + "cal-balance", rec ? formatCalorieBalance(rec, placeholder) : placeholder);
+// ★改善: 3点リーダー("...")を完全廃止し、スケルトンスクリーン（淡く光るアニメーション）で描画する
+function applyVitalField(id, valueStr, isLoading) {
+  const el = getEl(id);
+  if (!el) return;
+  if (isLoading) {
+    el.innerText = "\u00A0"; // 高さを保つための透明スペース
+    el.classList.add("skeleton-loading");
+  } else {
+    el.classList.remove("skeleton-loading");
+    el.innerText = valueStr;
+  }
 }
 
-// 当日（dateKey）のヘルスデータを確実に取得・表示する
+function renderVitalsToDOM(data, prefix, isLoading = false) {
+  const placeholder = "--";
+  const rec = extractHealthRecord(data);
+
+  const fId = getEl(prefix + "f-val") ? (prefix + "f-val") : (prefix + "f-val-log");
+  const cId = getEl(prefix + "c-val") ? (prefix + "c-val") : (prefix + "c-val-log");
+
+  applyVitalField(prefix + "cal-balance", rec ? formatCalorieBalance(rec, placeholder) : placeholder, isLoading);
+  applyVitalField(prefix + "sleep-time", rec ? cleanMetric(rec.sleep, placeholder) : placeholder, isLoading);
+  applyVitalField(prefix + "cal-intake", rec ? cleanMetric(rec.intake, placeholder) : placeholder, isLoading);
+  applyVitalField(prefix + "cal-burned", rec ? cleanMetric(rec.burned, placeholder) : placeholder, isLoading);
+  applyVitalField(prefix + "p-val", rec ? cleanMetric(rec.protein, placeholder) : placeholder, isLoading);
+  applyVitalField(fId, rec ? cleanMetric(rec.fat, placeholder) : placeholder, isLoading);
+  applyVitalField(cId, rec ? cleanMetric(rec.carb, placeholder) : placeholder, isLoading);
+}
+
 async function loadHealthDataIntoPrefix(dateKey, prefix) {
   const normKey = normalizeDateStr(dateKey);
   const cached = globalHealthMap[normKey];
@@ -320,12 +336,12 @@ async function loadHealthDataIntoPrefix(dateKey, prefix) {
   if (cached && hasValidHealthMetrics(cached)) {
     renderVitalsToDOM(cached, prefix, false);
   } else {
+    // 通信中はスケルトンスクリーンを表示
     renderVitalsToDOM(null, prefix, navigator.onLine);
   }
 
   if (!navigator.onLine) return;
 
-  // 睡眠またはカロリーのどちらかが欠けている場合は、必ずGASの個別取得APIに問い合わせて補完する
   const isComplete = cached && isMeaningfulMetric(cached.sleep) && (isMeaningfulMetric(cached.intake) || isMeaningfulMetric(cached.burned));
   if (isComplete) return;
 
@@ -335,21 +351,23 @@ async function loadHealthDataIntoPrefix(dateKey, prefix) {
     const resData = await apiFetch(url, {}, 20000);
     const rec = extractHealthRecord(resData);
 
+    const currentTargetKey = prefix === "detail-" ? currentDetailDateKey : normalizeDateStr(currentRecordingDateStr);
+
     if (rec && hasValidHealthMetrics(rec)) {
       const merged = mergeTwoHealthRecords(cached, rec);
       globalHealthMap[normKey] = merged;
 
-      const currentTargetKey = prefix === "detail-" ? currentDetailDateKey : normalizeDateStr(currentRecordingDateStr);
       if (currentTargetKey === normKey) {
         renderVitalsToDOM(merged, prefix, false);
       }
-    } else if (!cached || !hasValidHealthMetrics(cached)) {
-      renderVitalsToDOM(null, prefix, false);
+    } else if (currentTargetKey === normKey) {
+      renderVitalsToDOM(cached || null, prefix, false);
     }
   } catch (err) {
     console.warn(`[Health Data Fetch Warn] (${normKey}):`, err.message);
-    if (!cached || !hasValidHealthMetrics(cached)) {
-      renderVitalsToDOM(null, prefix, false);
+    const currentTargetKey = prefix === "detail-" ? currentDetailDateKey : normalizeDateStr(currentRecordingDateStr);
+    if (currentTargetKey === normKey) {
+      renderVitalsToDOM(cached || null, prefix, false);
     }
   }
 }
@@ -839,9 +857,10 @@ document.addEventListener('alpine:init', () => {
       this.isSaving = true;
       showSavingOverlay();
 
-      // "--" や "..." は空文字に変換して送信し、スプレッドシートの既存データを壊さないようにする
       const cleanDomVal = (id) => {
-        const val = getEl(id)?.innerText || "";
+        const el = getEl(id);
+        if (!el || el.classList.contains("skeleton-loading")) return "";
+        const val = el.innerText || "";
         return isMeaningfulMetric(val) ? val : "";
       };
 
@@ -1110,7 +1129,6 @@ function triggerMorphingAnimation(callback) {
   }, 320);
 }
 
-// 当日（dO）のカロリー収支＆今朝の睡眠時間を取得・表示
 window.openDashboardForDate = function(tK, sH, slideClass, useMorph = false) {
   const proceed = () => {
     vibrateSmall();
@@ -1359,7 +1377,6 @@ window.confirmDeleteFromDetail = function() {
   });
 };
 
-// 詳細画面でも当日（currentDetailDateKey）のヘルスデータを表示する
 function openDayDetailView(dK, dL, fV, sC, sH) {
   if (fV) previousViewBeforeDetail = fV;
   currentDetailDateKey = normalizeDateStr(dK);
