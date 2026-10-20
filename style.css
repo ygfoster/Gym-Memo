@@ -32,11 +32,48 @@ body {
   overscroll-behavior-y: auto;
 }
 
-/* ★改善: 左右の余白を16pxから8px(半分)にし、最大幅を広げて画面を広く使えるように調整 */
 .container {
   max-width: 520px;
   margin: 0 auto;
   padding: 12px 8px 160px 8px;
+}
+
+/* ===== スケルトンスクリーン（淡く光るローディング演出） ===== */
+@keyframes skeletonGlow {
+  0% { background-position: 100% 50%; opacity: 0.45; }
+  50% { background-position: 0% 50%; opacity: 0.9; }
+  100% { background-position: 100% 50%; opacity: 0.45; }
+}
+
+.skeleton-loading {
+  color: transparent !important;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.16) 50%, rgba(255, 255, 255, 0.05) 75%);
+  background-size: 200% 100%;
+  animation: skeletonGlow 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  border-radius: 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.vital-balance-val.skeleton-loading {
+  width: 136px;
+  height: 32px;
+  display: block;
+}
+
+.vital-sleep-val.skeleton-loading {
+  width: 116px;
+  height: 30px;
+  display: block;
+  margin-left: auto;
+}
+
+.vital-sub-val.skeleton-loading {
+  width: 72%;
+  height: 19px;
+  display: block;
+  margin: 0 auto;
+  border-radius: 6px;
 }
 
 /* ===== 洗練されたトースト通知（緑色を完全排除） ===== */
@@ -365,13 +402,13 @@ body {
   margin-bottom: 18px;
 }
 .vital-metric-label { font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 8px; }
-.vital-balance-val { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; text-align: left; }
-.vital-sleep-val { font-size: 1.6rem; font-weight: 600; text-align: right; line-height: 1.2; }
+.vital-balance-val { font-size: 1.75rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; text-align: left; min-height: 32px; transition: opacity var(--transition-smooth); }
+.vital-sleep-val { font-size: 1.6rem; font-weight: 600; text-align: right; line-height: 1.2; min-height: 30px; transition: opacity var(--transition-smooth); }
 .vitals-secondary-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; text-align: center; }
 .vital-sub-item { background-color: var(--bg-elevated); padding: 12px 4px; border-radius: 12px; transition: transform var(--transition-fast); }
 .vital-sub-item:active { transform: scale(0.96); }
 .vital-sub-label { font-size: 0.75rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
-.vital-sub-val { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); }
+.vital-sub-val { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); min-height: 19px; transition: opacity var(--transition-smooth); }
 
 /* ===== 日付バー・詳細画面 ===== */
 .detail-date-bar { display: flex; justify-content: space-between; align-items: center; margin: 8px 4px 20px 4px; }
@@ -496,7 +533,6 @@ body {
 .form-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
 .form-card-num { font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); letter-spacing: 0.05em; }
 
-/* 削除ボタン（ゴミ箱アイコン統一） */
 .btn-remove-card {
   background: none;
   border: none;
@@ -658,7 +694,7 @@ body {
 .btn-secondary:active { background-color: var(--bg-elevated); transform: scale(0.97); }
 
 /* =========================================================
-   新・ナビゲーションシステム（横幅拡張に合わせて最適化）
+   ナビゲーションシステム
    ========================================================= */
 #bottom-nav-bar {
   position: fixed;
@@ -695,7 +731,6 @@ body {
 .nav-item.active .nav-icon { transform: translateY(-2px); }
 .nav-text { font-size: 0.65rem; font-weight: 700; letter-spacing: 0.05em; }
 
-/* 中央に飛び出す追加アクションボタン */
 .nav-center-wrap { width: 18%; display: flex; justify-content: center; position: relative; }
 .nav-center-action {
   position: absolute;
@@ -716,7 +751,6 @@ body {
 .nav-center-action:active { transform: scale(0.94); }
 .nav-center-action svg { width: 28px; height: 28px; stroke-width: 2px; }
 
-/* Morphing Overlay (追加ボタン展開アニメーション用) */
 .morph-overlay {
   position: fixed;
   background: var(--bg-surface);
@@ -846,7 +880,6 @@ body {
 .sheet-circle-btn.play { background: rgba(255, 149, 0, 0.15); color: var(--brand-primary); border: 1px solid rgba(255, 149, 0, 0.4); }
 .sheet-circle-btn.stop { background: rgba(255, 69, 58, 0.15); color: var(--danger); border: 1px solid rgba(255, 69, 58, 0.4); }
 
-/* スライド・フェード遷移アニメーション */
 .slide-anim-from-right { animation: slideInRight 0.32s cubic-bezier(0.32, 0.72, 0, 1) forwards; }
 .slide-anim-from-left { animation: slideInLeft 0.32s cubic-bezier(0.32, 0.72, 0, 1) forwards; }
 @keyframes slideInRight { from { transform: scale(0.98) translateX(24px); opacity: 0; } to { transform: scale(1) translateX(0); opacity: 1; } }
